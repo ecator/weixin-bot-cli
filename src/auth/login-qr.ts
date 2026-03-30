@@ -272,6 +272,7 @@ export async function waitForWeixinLogin(opts: {
           if (redirectHost) {
             const newBaseUrl = `https://${redirectHost}`;
             activeLogin.currentApiBaseUrl = newBaseUrl;
+            process.stdout.write(`\n🔀 IDC 跳转，切换 host 为 ${redirectHost}\n`);
             logger.info(`waitForWeixinLogin: IDC redirect, switching polling host to ${redirectHost}`);
           } else {
             logger.warn(`waitForWeixinLogin: received scaned_but_redirect but redirect_host is missing, continuing with current host`);

@@ -1,314 +1,77 @@
-# WeChat
+# weixin-bot-cli
 
-[简体中文](./README.zh_CN.md)
+这是一个轻量级、独立的微信命令行工具（CLI）。它支持通过终端二维码登录微信、实时接收微信消息，并通过命令行直接发送基础的文本消息。
 
-OpenClaw's WeChat channel plugin, supporting login authorization via QR code scanning.
+该项目基于官方 iLink 微信协议，直接获取配置并将收到的消息稳定地输出到标准终端。它完全独立运行，**不依赖**庞大复杂的插件系统或任何 AI 框架代理层，非常适合用于编写自定义自动化脚本或进行终端调试。
 
-## Compatibility
+## 功能特性
 
-| Plugin Version | OpenClaw Version       | npm dist-tag | Status      |
-|---------------|------------------------|--------------|-------------|
-| 2.0.x         | >=2026.3.22            | `latest`     | Active      |
-| 1.0.x         | >=2026.1.0 <2026.3.22  | `legacy`     | Maintenance |
+- **二维码认证登录**：安全地在终端获取和扫描二维码来完成微信会话登录。
+- **消息监听**：内置长轮询（Long-polling）机制实时监听收件箱，并打印结构化的消息日志。
+- **发送消息**：直接通过命令行 `send` 指令向指定微信联系人发送纯文本消息。
+- **原生媒体支持**：代码库底层保留了媒体处理的支持（详见 `src/media`，`src/cdn`），基于 TypeScript 的内部 API 设计允许开发者后续轻松扩展发送图片、视频和文件等功能。
+- **独立免数据库存储**：告别重量级数据库依赖，所有账号凭证和会话状态均默认以纯文本和 JSON 的形式保存在物理文件系统 `~/.weixin-bot-cli` 下。
+- **TypeScript 构建**：现代化的强类型代码库，编译为开箱即用的 ES Modules。
 
-> The plugin checks the host version at startup and will refuse to load if the
-> running OpenClaw version is outside the supported range.
+## 环境要求
 
-## Prerequisites
+- Node.js >= 22
+- npm / pnpm
 
-[OpenClaw](https://docs.openclaw.ai/install) must be installed (the `openclaw` CLI needs to be available).
 
-Check your version: `openclaw --version`
 
-## Quick Install
+## 使用方法
 
-```bash
-npx -y @tencent-weixin/openclaw-weixin-cli install
-```
+账号配置文件和状态数据的默认存放路径为用户的 `~/.weixin-bot-cli`。如果需要修改数据目录，你可以通过 `-h` 或 `--home` 参数进行覆盖，同样也支持设置 `WEIXIN_BOT_HOME` 环境变量。
 
-## Manual Installation
+### 1. 登录
 
-If the quick install doesn't work, follow these steps manually:
-
-### 1. Install the plugin
+初始化二维码扫码登录流程。
+它会在终端生成登录二维码。请使用手机微信扫描屏幕上的二维码完成授权。
 
 ```bash
-openclaw plugins install "@tencent-weixin/openclaw-weixin"
+npx @ecat/weixin-bot-cli login
+
+# 可选拓展：将账号数据存放在自定义路径下
+npx @ecat/weixin-bot-cli --home D:/my-data login
 ```
 
-### 2. Enable the plugin
+### 2. 启动监听
+
+登录成功后，即可启动长轮询监听模式。该命令将挂起并持续运行，只要你的微信账号收到新消息，就会实时解析并将发件人和正文打印到控制台中。
 
 ```bash
-openclaw config set plugins.entries.openclaw-weixin.enabled true
+npx @ecat/weixin-bot-cli start
 ```
 
-### 3. QR code login
+### 3. 发送消息
+
+你可以在不中断 CLI 运行的情况下（或开个新终端），通过命令行的形式给特定的用户发送纯文本消息。（注：必须携带接收方的 微信 User ID）
+发送命令前请确保已经运行过 login 命令。
 
 ```bash
-openclaw channels login --channel openclaw-weixin
+npx @ecat/weixin-bot-cli send <接收方的_user_id> "Hello，这是来自命令行的测试消息！"
 ```
 
-A QR code will appear in the terminal. Scan it with your phone and confirm the authorization. Once confirmed, the login credentials will be saved locally automatically — no further action is needed.
+## 项目目录架构
 
-### 4. Restart the gateway
+- `src/cli.ts` - 核心命令入口，定义了 Commander 路由与其绑定的命令事件。
+- `src/auth/` - 认证相关操作包，包括二维码获取、扫描轮询，以及本地持久化凭证文件写入逻辑（`accounts.ts`）。
+- `src/api/` - 底层通信实现，对 iLink API 进行了直接封装（包括 `getupdates`, `sendmessage`, `getconfig` 等）。
+- `src/monitor/` - 核心长轮询工作器 Worker 处理循环逻辑。
+- `src/messaging/` - 消息发送模块，暴露可以独立发文本、处理内部 Markdown 以及组装 WeChat 发送上下文的基础 API。
+
+## 开发
+
+建议将仓库克隆至本地，编译后运行即可。
 
 ```bash
-openclaw gateway restart
-```
+# 安装依赖
+pnpm install
 
-## Adding More WeChat Accounts
+# 编译项目
+pnpm run build
 
-```bash
-openclaw channels login --channel openclaw-weixin
-```
-
-Each QR code login creates a new account entry, supporting multiple WeChat accounts online simultaneously.
-
-## Multi-Account Context Isolation
-
-By default, all channels share the same AI conversation context. To isolate conversation context for each WeChat account:
-
-```bash
-openclaw config set agents.mode per-channel-per-peer
-```
-
-This gives each "WeChat account + message sender" combination its own independent AI memory, preventing context cross-talk between accounts.
-
-## Backend API Protocol
-
-This plugin communicates with the backend gateway via HTTP JSON API. Developers integrating with their own backend need to implement the following interfaces.
-
-All endpoints use `POST` with JSON request and response bodies. Common request headers:
-
-| Header | Description |
-|--------|-------------|
-| `Content-Type` | `application/json` |
-| `AuthorizationType` | Fixed value `ilink_bot_token` |
-| `Authorization` | `Bearer <token>` (obtained after login) |
-| `X-WECHAT-UIN` | Base64-encoded random uint32 |
-
-### Endpoint List
-
-| Endpoint | Path | Description |
-|----------|------|-------------|
-| getUpdates | `getupdates` | Long-poll for new messages |
-| sendMessage | `sendmessage` | Send a message (text/image/video/file) |
-| getUploadUrl | `getuploadurl` | Get CDN upload pre-signed URL |
-| getConfig | `getconfig` | Get account config (typing ticket, etc.) |
-| sendTyping | `sendtyping` | Send/cancel typing status indicator |
-
-### getUpdates
-
-Long-polling endpoint. The server responds when new messages arrive or on timeout.
-
-**Request body:**
-
-```json
-{
-  "get_updates_buf": ""
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `get_updates_buf` | `string` | Sync cursor from the previous response; empty string for the first request |
-
-**Response body:**
-
-```json
-{
-  "ret": 0,
-  "msgs": [...],
-  "get_updates_buf": "<new cursor>",
-  "longpolling_timeout_ms": 35000
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ret` | `number` | Return code, `0` = success |
-| `errcode` | `number?` | Error code (e.g., `-14` = session timeout) |
-| `errmsg` | `string?` | Error description |
-| `msgs` | `WeixinMessage[]` | Message list (structure below) |
-| `get_updates_buf` | `string` | New sync cursor to pass in the next request |
-| `longpolling_timeout_ms` | `number?` | Server-suggested long-poll timeout for the next request (ms) |
-
-### sendMessage
-
-Send a message to a user.
-
-**Request body:**
-
-```json
-{
-  "msg": {
-    "to_user_id": "<target user ID>",
-    "context_token": "<conversation context token>",
-    "item_list": [
-      {
-        "type": 1,
-        "text_item": { "text": "Hello" }
-      }
-    ]
-  }
-}
-```
-
-### getUploadUrl
-
-Get CDN upload pre-signed parameters. Call this endpoint before uploading a file to obtain `upload_param` and `thumb_upload_param`.
-
-**Request body:**
-
-```json
-{
-  "filekey": "<file identifier>",
-  "media_type": 1,
-  "to_user_id": "<target user ID>",
-  "rawsize": 12345,
-  "rawfilemd5": "<plaintext MD5>",
-  "filesize": 12352,
-  "thumb_rawsize": 1024,
-  "thumb_rawfilemd5": "<thumbnail plaintext MD5>",
-  "thumb_filesize": 1040
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `media_type` | `number` | `1` = IMAGE, `2` = VIDEO, `3` = FILE |
-| `rawsize` | `number` | Original file plaintext size |
-| `rawfilemd5` | `string` | Original file plaintext MD5 |
-| `filesize` | `number` | Ciphertext size after AES-128-ECB encryption |
-| `thumb_rawsize` | `number?` | Thumbnail plaintext size (required for IMAGE/VIDEO) |
-| `thumb_rawfilemd5` | `string?` | Thumbnail plaintext MD5 (required for IMAGE/VIDEO) |
-| `thumb_filesize` | `number?` | Thumbnail ciphertext size (required for IMAGE/VIDEO) |
-
-**Response body:**
-
-```json
-{
-  "upload_param": "<original image upload encrypted parameters>",
-  "thumb_upload_param": "<thumbnail upload encrypted parameters>"
-}
-```
-
-### getConfig
-
-Get account configuration, including the typing ticket.
-
-**Request body:**
-
-```json
-{
-  "ilink_user_id": "<user ID>",
-  "context_token": "<optional, conversation context token>"
-}
-```
-
-**Response body:**
-
-```json
-{
-  "ret": 0,
-  "typing_ticket": "<base64-encoded typing ticket>"
-}
-```
-
-### sendTyping
-
-Send or cancel the typing status indicator.
-
-**Request body:**
-
-```json
-{
-  "ilink_user_id": "<user ID>",
-  "typing_ticket": "<obtained from getConfig>",
-  "status": 1
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | `number` | `1` = typing, `2` = cancel typing |
-
-### Message Structure
-
-#### WeixinMessage
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `seq` | `number?` | Message sequence number |
-| `message_id` | `number?` | Unique message ID |
-| `from_user_id` | `string?` | Sender ID |
-| `to_user_id` | `string?` | Receiver ID |
-| `create_time_ms` | `number?` | Creation timestamp (ms) |
-| `session_id` | `string?` | Session ID |
-| `message_type` | `number?` | `1` = USER, `2` = BOT |
-| `message_state` | `number?` | `0` = NEW, `1` = GENERATING, `2` = FINISH |
-| `item_list` | `MessageItem[]?` | Message content list |
-| `context_token` | `string?` | Conversation context token, must be passed back when replying |
-
-#### MessageItem
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `number` | `1` TEXT, `2` IMAGE, `3` VOICE, `4` FILE, `5` VIDEO |
-| `text_item` | `{ text: string }?` | Text content |
-| `image_item` | `ImageItem?` | Image (with CDN reference and AES key) |
-| `voice_item` | `VoiceItem?` | Voice (SILK encoded) |
-| `file_item` | `FileItem?` | File attachment |
-| `video_item` | `VideoItem?` | Video |
-| `ref_msg` | `RefMessage?` | Referenced message |
-
-#### CDN Media Reference (CDNMedia)
-
-All media types (image/voice/file/video) are transferred via CDN using AES-128-ECB encryption:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `encrypt_query_param` | `string?` | Encrypted parameters for CDN download/upload |
-| `aes_key` | `string?` | Base64-encoded AES-128 key |
-
-### CDN Upload Flow
-
-1. Calculate the file's plaintext size, MD5, and ciphertext size after AES-128-ECB encryption
-2. If a thumbnail is needed (image/video), calculate the thumbnail's plaintext and ciphertext parameters as well
-3. Call `getUploadUrl` to get `upload_param` (and `thumb_upload_param`)
-4. Encrypt the file content with AES-128-ECB and PUT upload to the CDN URL
-5. Encrypt and upload the thumbnail in the same way
-6. Use the returned `encrypt_query_param` to construct a `CDNMedia` reference, include it in the `MessageItem`, and send
-
-> For complete type definitions, see [`src/api/types.ts`](src/api/types.ts). For API call implementations, see [`src/api/api.ts`](src/api/api.ts).
-
-## Uninstall
-
-```bash
-openclaw openclaw-weixin uninstall
-```
-
-## Troubleshooting
-
-### "requires OpenClaw >=2026.3.22" error
-
-Your OpenClaw version is too old for this plugin version. Check with:
-
-```bash
-openclaw --version
-```
-
-Install the legacy plugin line instead:
-
-```bash
-openclaw plugins install @tencent-weixin/openclaw-weixin@legacy
-```
-
-### Channel shows "OK" but doesn't connect
-
-Ensure `plugins.entries.openclaw-weixin.enabled` is `true` in `~/.openclaw/openclaw.json`:
-
-```bash
-openclaw config set plugins.entries.openclaw-weixin.enabled true
-openclaw gateway restart
+# 运行
+node dist/cli.js
 ```

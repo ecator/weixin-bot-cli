@@ -1,84 +1,8 @@
-# 微信
+# 后端 API 协议
 
-[English](./README.md)
+所有接口均为 `POST`，请求和响应均为 JSON。
 
-OpenClaw 的微信渠道插件，支持通过扫码完成登录授权。
-
-## 兼容性
-
-| 插件版本 | OpenClaw 版本            | npm dist-tag | 状态   |
-|---------|--------------------------|--------------|--------|
-| 2.0.x   | >=2026.3.22              | `latest`     | 活跃   |
-| 1.0.x   | >=2026.1.0 <2026.3.22    | `legacy`     | 维护中 |
-
-> 插件在启动时会检查宿主版本，如果运行的 OpenClaw 版本超出支持范围，插件将拒绝加载。
-
-## 前提条件
-
-已安装 [OpenClaw](https://docs.openclaw.ai/install)（需要 `openclaw` CLI 可用）。
-
-查看版本：`openclaw --version`
-
-## 一键安装
-
-```bash
-npx -y @tencent-weixin/openclaw-weixin-cli install
-```
-
-## 手动安装
-
-如果一键安装不适用，可以按以下步骤手动操作：
-
-### 1. 安装插件
-
-```bash
-openclaw plugins install "@tencent-weixin/openclaw-weixin"
-```
-
-### 2. 启用插件
-
-```bash
-openclaw config set plugins.entries.openclaw-weixin.enabled true
-```
-
-### 3. 扫码登录
-
-```bash
-openclaw channels login --channel openclaw-weixin
-```
-
-终端会显示一个二维码，用手机扫码并在手机上确认授权。确认后，登录凭证会自动保存到本地，无需额外操作。
-
-### 4. 重启 gateway
-
-```bash
-openclaw gateway restart
-```
-
-## 添加更多微信账号
-
-```bash
-openclaw channels login --channel openclaw-weixin
-```
-
-每次扫码登录都会创建一个新的账号条目，支持多个微信号同时在线。
-
-## 多账号上下文隔离
-
-默认情况下，所有渠道的 AI 会话共享同一个上下文。如果希望每个微信账号的对话上下文相互隔离：
-
-```bash
-openclaw config set agents.mode per-channel-per-peer
-```
-
-这样每个「微信账号 + 发消息用户」组合都会拥有独立的 AI 记忆，账号之间不会串台。
-
-## 后端 API 协议
-
-本插件通过 HTTP JSON API 与后端网关通信。二次开发者若需对接自有后端，需实现以下接口。
-
-所有接口均为 `POST`，请求和响应均为 JSON。通用请求头：
-
+通用请求头：
 | Header | 说明 |
 |--------|------|
 | `Content-Type` | `application/json` |
@@ -86,7 +10,7 @@ openclaw config set agents.mode per-channel-per-peer
 | `Authorization` | `Bearer <token>`（登录后获取） |
 | `X-WECHAT-UIN` | 随机 uint32 的 base64 编码 |
 
-### 接口列表
+## 接口列表
 
 | 接口 | 路径 | 说明 |
 |------|------|------|
@@ -279,35 +203,4 @@ openclaw config set agents.mode per-channel-per-peer
 5. 缩略图同理加密并上传
 6. 使用返回的 `encrypt_query_param` 构造 `CDNMedia` 引用，放入 `MessageItem` 发送
 
-> 完整的类型定义见 [`src/api/types.ts`](src/api/types.ts)，API 调用实现见 [`src/api/api.ts`](src/api/api.ts)。
-
-## 卸载
-
-```bash
-openclaw openclaw-weixin uninstall
-```
-
-## 故障排查
-
-### "requires OpenClaw >=2026.3.22" 报错
-
-你的 OpenClaw 版本太旧，不兼容当前插件版本。检查版本：
-
-```bash
-openclaw --version
-```
-
-安装旧版插件线：
-
-```bash
-openclaw plugins install @tencent-weixin/openclaw-weixin@legacy
-```
-
-### Channel 显示 "OK" 但未连接
-
-确保 `~/.openclaw/openclaw.json` 中 `plugins.entries.openclaw-weixin.enabled` 为 `true`：
-
-```bash
-openclaw config set plugins.entries.openclaw-weixin.enabled true
-openclaw gateway restart
-```
+> 完整的类型定义见 [`src/api/types.ts`](../src/api/types.ts)，API 调用实现见 [`src/api/api.ts`](../src/api/api.ts)。

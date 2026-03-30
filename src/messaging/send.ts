@@ -1,6 +1,7 @@
-import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
-import { stripMarkdown } from "openclaw/plugin-sdk/text-runtime";
-
+// Local standalone stripMarkdown to remove openclaw dependency
+export function stripMarkdown(str: string): string {
+  return str.replace(/([_*~`])/g, '');
+}
 import { sendMessage as sendMessageApi } from "../api/api.js";
 import type { WeixinApiOptions } from "../api/api.js";
 import { logger } from "../util/logger.js";
@@ -63,13 +64,13 @@ function buildTextMessageReq(params: {
 function buildSendMessageReq(params: {
   to: string;
   contextToken?: string;
-  payload: ReplyPayload;
+  text: string;
   clientId: string;
 }): SendMessageReq {
-  const { to, contextToken, payload, clientId } = params;
+  const { to, contextToken, text, clientId } = params;
   return buildTextMessageReq({
     to,
-    text: payload.text ?? "",
+    text: text ?? "",
     contextToken,
     clientId,
   });
@@ -91,7 +92,7 @@ export async function sendMessageWeixin(params: {
   const req = buildSendMessageReq({
     to,
     contextToken: opts.contextToken,
-    payload: { text },
+    text,
     clientId,
   });
   try {

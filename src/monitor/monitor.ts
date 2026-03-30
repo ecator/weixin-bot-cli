@@ -1,15 +1,12 @@
-import type { ChannelAccountSnapshot } from "openclaw/plugin-sdk/channel-contract";
-import type { PluginRuntime } from "openclaw/plugin-sdk/core";
-
 import { getUpdates } from "../api/api.js";
 import { WeixinConfigManager } from "../api/config-cache.js";
 import { SESSION_EXPIRED_ERRCODE, pauseSession, getRemainingPauseMs } from "../api/session-guard.js";
-import { processOneMessage } from "../messaging/process-message.js";
-import { getWeixinRuntime, waitForWeixinRuntime } from "../runtime.js";
 import { getSyncBufFilePath, loadGetUpdatesBuf, saveGetUpdatesBuf } from "../storage/sync-buf.js";
 import { logger } from "../util/logger.js";
 import type { Logger } from "../util/logger.js";
 import { redactBody } from "../util/redact.js";
+import { MessageItemType } from "../api/types.js";
+import type { WeixinMessage } from "../api/types.js";
 
 const DEFAULT_LONG_POLL_TIMEOUT_MS = 35_000;
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -18,50 +15,53 @@ const RETRY_DELAY_MS = 2_000;
 
 export type MonitorWeixinOpts = {
   baseUrl: string;
-  cdnBaseUrl: string;
+  cdnBaseUrl?: string;
   token?: string;
   accountId: string;
-  /** When non-empty, only messages whose from_user_id is in this list are processed. */
-  allowFrom?: string[];
-  config: import("openclaw/plugin-sdk/core").OpenClawConfig;
-  runtime?: { log?: (msg: string) => void; error?: (msg: string) => void };
   abortSignal?: AbortSignal;
   longPollTimeoutMs?: number;
-  /** Gateway status callback — called on each successful poll and inbound message. */
-  setStatus?: (next: ChannelAccountSnapshot) => void;
 };
 
 /**
- * Long-poll loop: getUpdates -> normalize -> recordInboundSession -> dispatchReplyFromConfig.
- * Runs until abort.
+ * Extract text body from item_list.
+ */
+function extractSummary(full: WeixinMessage): string {
+  const itemList = full.item_list;
+  if (!itemList?.length) return "[Empty Message]";
+  
+  let summary = "";
+  for (const item of itemList) {
+    if (item.type === MessageItemType.TEXT && item.text_item?.text != null) {
+      summary += String(item.text_item.text);
+    } else if (item.type === MessageItemType.IMAGE) {
+      summary += "[图片] ";
+    } else if (item.type === MessageItemType.VIDEO) {
+      summary += "[视频] ";
+    } else if (item.type === MessageItemType.FILE) {
+      summary += "[文件] ";
+    } else if (item.type === MessageItemType.VOICE) {
+      summary += "[语音] ";
+    } else {
+      summary += `[未知类型:${item.type}] `;
+    }
+  }
+  return summary;
+}
+
+/**
+ * Long-poll loop. Runs until abort.
  */
 export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<void> {
   const {
     baseUrl,
-    cdnBaseUrl,
     token,
     accountId,
-    config,
     abortSignal,
     longPollTimeoutMs,
-    setStatus,
   } = opts;
-  const log = opts.runtime?.log ?? (() => {});
-  const errLog = opts.runtime?.error ?? ((m: string) => log(m));
   const aLog: Logger = logger.withAccount(accountId);
 
-  aLog.info(`waiting for Weixin runtime...`);
-  let channelRuntime: PluginRuntime["channel"];
-  try {
-    const pluginRuntime = await waitForWeixinRuntime();
-    channelRuntime = pluginRuntime.channel;
-    aLog.info(`Weixin runtime acquired, channelRuntime type: ${typeof channelRuntime}`);
-  } catch (err) {
-    aLog.error(`waitForWeixinRuntime() failed: ${String(err)}`);
-    throw err;
-  }
-
-  log(`weixin monitor started (${baseUrl}, account=${accountId})`);
+  console.log(`[weixin-bot-cli] 开始监听消息 (baseUrl=${baseUrl}, account=${accountId})`);
   aLog.info(
     `Monitor started: baseUrl=${baseUrl} timeoutMs=${longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS}`,
   );
@@ -73,14 +73,12 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
   let getUpdatesBuf = previousGetUpdatesBuf ?? "";
 
   if (previousGetUpdatesBuf) {
-    log(`[weixin] resuming from previous sync buf (${getUpdatesBuf.length} bytes)`);
     aLog.debug(`Using previous get_updates_buf (${getUpdatesBuf.length} bytes)`);
   } else {
-    log(`[weixin] no previous sync buf, starting fresh`);
     aLog.info(`No previous get_updates_buf found, starting fresh`);
   }
 
-  const configManager = new WeixinConfigManager({ baseUrl, token }, log);
+  const configManager = new WeixinConfigManager({ baseUrl, token }, (msg) => aLog.debug(msg));
 
   let nextTimeoutMs = longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS;
   let consecutiveFailures = 0;
@@ -96,13 +94,9 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         get_updates_buf: getUpdatesBuf,
         timeoutMs: nextTimeoutMs,
       });
-      aLog.debug(
-        `getUpdates response: ret=${resp.ret}, msgs=${resp.msgs?.length ?? 0}, get_updates_buf_length=${resp.get_updates_buf?.length ?? 0}`,
-      );
 
       if (resp.longpolling_timeout_ms != null && resp.longpolling_timeout_ms > 0) {
         nextTimeoutMs = resp.longpolling_timeout_ms;
-        aLog.debug(`Updated next poll timeout: ${nextTimeoutMs}ms`);
       }
       const isApiError =
         (resp.ret !== undefined && resp.ret !== 0) ||
@@ -114,9 +108,7 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         if (isSessionExpired) {
           pauseSession(accountId);
           const pauseMs = getRemainingPauseMs(accountId);
-          errLog(
-            `weixin getUpdates: session expired (errcode ${SESSION_EXPIRED_ERRCODE}), pausing bot for ${Math.ceil(pauseMs / 60_000)} min`,
-          );
+          console.error(`[Error] 凭证过期 (errcode ${SESSION_EXPIRED_ERRCODE})，暂停轮询 ${Math.ceil(pauseMs / 60_000)} 分钟`);
           aLog.error(
             `getUpdates: session expired (errcode=${resp.errcode} ret=${resp.ret}), pausing all requests for ${Math.ceil(pauseMs / 60_000)} min`,
           );
@@ -126,16 +118,10 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         }
 
         consecutiveFailures += 1;
-        errLog(
-          `weixin getUpdates failed: ret=${resp.ret} errcode=${resp.errcode} errmsg=${resp.errmsg ?? ""} (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`,
-        );
         aLog.error(
           `getUpdates failed: ret=${resp.ret} errcode=${resp.errcode} errmsg=${resp.errmsg} response=${redactBody(JSON.stringify(resp))}`,
         );
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          errLog(
-            `weixin getUpdates: ${MAX_CONSECUTIVE_FAILURES} consecutive failures, backing off 30s`,
-          );
           aLog.error(
             `getUpdates: ${MAX_CONSECUTIVE_FAILURES} consecutive failures, backing off 30s`,
           );
@@ -147,38 +133,25 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         continue;
       }
       consecutiveFailures = 0;
-      setStatus?.({ accountId, lastEventAt: Date.now() });
+      
       if (resp.get_updates_buf != null && resp.get_updates_buf !== "") {
         saveGetUpdatesBuf(syncFilePath, resp.get_updates_buf);
         getUpdatesBuf = resp.get_updates_buf;
         aLog.debug(`Saved new get_updates_buf (${getUpdatesBuf.length} bytes)`);
       }
+      
       const list = resp.msgs ?? [];
       for (const full of list) {
+        const summary = extractSummary(full);
+        const fromUserId = full.from_user_id ?? "unknown";
+        console.log(`\n[收到消息] 来自: ${fromUserId}`);
+        console.log(`> ${summary}`);
         aLog.info(
-          `inbound message: from=${full.from_user_id} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
+          `inbound message: from=${fromUserId} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
         );
 
-        const now = Date.now();
-        setStatus?.({ accountId, lastEventAt: now, lastInboundAt: now });
-
-        // allowFrom filtering is delegated to processOneMessage via the framework
-        // authorization pipeline (resolveSenderCommandAuthorizationWithRuntime).
-
-        const fromUserId = full.from_user_id ?? "";
-        const cachedConfig = await configManager.getForUser(fromUserId, full.context_token);
-
-        await processOneMessage(full, {
-          accountId,
-          config,
-          channelRuntime,
-          baseUrl,
-          cdnBaseUrl,
-          token,
-          typingTicket: cachedConfig.typingTicket,
-          log: opts.runtime?.log ?? (() => {}),
-          errLog,
-        });
+        // Pre-warm the config cache just in case we add reply functionality
+        await configManager.getForUser(fromUserId, full.context_token);
       }
     } catch (err) {
       if (abortSignal?.aborted) {
@@ -186,14 +159,8 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         return;
       }
       consecutiveFailures += 1;
-      errLog(
-        `weixin getUpdates error (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${String(err)}`,
-      );
       aLog.error(`getUpdates error: ${String(err)}, stack=${(err as Error).stack}`);
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        errLog(
-          `weixin getUpdates: ${MAX_CONSECUTIVE_FAILURES} consecutive failures, backing off 30s`,
-        );
         aLog.error(
           `getUpdates: ${MAX_CONSECUTIVE_FAILURES} consecutive failures, backing off 30s`,
         );
