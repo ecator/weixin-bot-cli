@@ -16,6 +16,13 @@
   "bugs": {
     "url": "https://github.com/ecator/weixin-bot-cli/issues"
   },
+  "keywords": [
+    "weixin",
+    "wechat",
+    "bot",
+    "cli",
+    "ilink"
+  ],
   "bin": {
     "weixin-bot-cli": "./dist/cli.js"
   },
