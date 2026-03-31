@@ -3,7 +3,7 @@
 ## 运行环境与架构概览
 
 `weixin-bot-cli` 项目是一个专门用于与基于 iLink 协议的微信进行交互的**独立命令行工具**。
-该工具的前身是高度耦合于 `openclaw` AI 网关框架的微信插件团队版本。经过了彻底的重构，现在它是一个独立的轻量级 CLI 平台。
+该工具的前身是高度耦合于[`openclaw` AI 网关框架的微信插件团队版本](https://github.com/Tencent/openclaw-weixin)。经过了彻底的重构，现在它是一个独立的轻量级 CLI 平台。
 
 **⚠️ 极其关键的架构限制与不变量：不得产生任何对 OPENCLAW 的依赖**
 本项目的代码库**绝对不允许**导入、引用或依赖 `openclaw` 核心包的内容与体系。这个工具需要自主管理其状态写入、处理轮询循环并独立发起 API 请求。
@@ -13,7 +13,7 @@
 1. **状态目录与持久化存储**：
    应用的所有状态数据（包含账号 Token 签发信息，session 上下文字符串，日志以及同步位 `get_updates_buf`）现在都收敛并持久化至统一目录。
    - 默认的核心目录：`~/.weixin-bot-cli`
-   - 可以通过 Node 环境变量：`process.env.WEIXIN_BOT_HOME`（或者附加命令行指令 `--home`）来重写和覆盖。
+   - 可以通过 Node 环境变量：`process.env.WEIXIN_BOT_CLI_HOME`（或者附加命令行指令 `--home`）来重写和覆盖。
    - 实现逻辑文件参见：`src/storage/state-dir.ts`
 
 2. **鉴权与登录机制（扫码）**：
@@ -33,6 +33,7 @@
 ## 需了解的关键目录映射
 
 - `src/api/`: 类型良好的 API 请求代理器封装地以及主要发包函数 `apiPostFetch` (承载着固定了官方 WeChat Headers，各个基础 version，甚至 User-Agents 伪装的核心逻辑)。
+  - 详细api文档可以参考`docs/api.md`。
 - `src/auth/`: 负责账号持久化索引保存，统筹验证机制并解析核心凭据的控制层。
 - `src/cdn/`: 上传文件/图片/视频等能力层逻辑（通过这里处理后的资源才能被 Wechat API 正常映射发送出去）。
 - `src/media/`: 对各类富媒体资源进行处理，例如将音频从微信的特殊 `silk` 格式转写映射成系统普遍可识别的 `wav` 等（由 `silk-wasm` 驱动）,包含媒体解密算法等。
