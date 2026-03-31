@@ -3,11 +3,19 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Weixin Bot CLI",
   "license": "MIT",
   "author": "ecat",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ecator/weixin-bot-cli.git"
+  },
+  "homepage": "https://github.com/ecator/weixin-bot-cli#readme",
+  "bugs": {
+    "url": "https://github.com/ecator/weixin-bot-cli/issues"
+  },
   "bin": {
     "weixin-bot-cli": "./dist/cli.js"
   },
