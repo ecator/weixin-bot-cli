@@ -4,18 +4,12 @@ import path from "node:path";
 
 
 
-/**
- * Plugin logger — writes JSON lines to the main openclaw log file:
- *   <tmpDir>/openclaw-YYYY-MM-DD.log
- * Same file and format used by all other channels.
- */
-
 const MAIN_LOG_DIR = path.join(os.homedir(), ".weixin-bot-cli", "logs");
 const SUBSYSTEM = "weixin-bot-cli";
 const RUNTIME = "node";
 const RUNTIME_VERSION = process.versions.node;
 const HOSTNAME = os.hostname() || "unknown";
-const PARENT_NAMES = ["openclaw"];
+const PARENT_NAMES = ["cli"];
 
 /** tslog-compatible level IDs (higher = more severe). */
 const LEVEL_IDS: Record<string, number> = {
@@ -61,7 +55,7 @@ function localDateKey(now: Date): string {
 
 function resolveMainLogPath(): string {
   const dateKey = localDateKey(new Date());
-  return path.join(MAIN_LOG_DIR, `openclaw-${dateKey}.log`);
+  return path.join(MAIN_LOG_DIR, `${dateKey}.log`);
 }
 
 let logDirEnsured = false;

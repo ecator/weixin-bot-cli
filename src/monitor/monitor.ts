@@ -20,15 +20,16 @@ export type MonitorWeixinOpts = {
   accountId: string;
   abortSignal?: AbortSignal;
   longPollTimeoutMs?: number;
+  onMessage?: (msg: WeixinMessage) => Promise<void>;
 };
 
 /**
  * Extract text body from item_list.
  */
-function extractSummary(full: WeixinMessage): string {
+export function extractSummary(full: WeixinMessage): string {
   const itemList = full.item_list;
   if (!itemList?.length) return "[Empty Message]";
-  
+
   let summary = "";
   for (const item of itemList) {
     if (item.type === MessageItemType.TEXT && item.text_item?.text != null) {
@@ -58,6 +59,7 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
     accountId,
     abortSignal,
     longPollTimeoutMs,
+    onMessage,
   } = opts;
   const aLog: Logger = logger.withAccount(accountId);
 
@@ -133,13 +135,13 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         continue;
       }
       consecutiveFailures = 0;
-      
+
       if (resp.get_updates_buf != null && resp.get_updates_buf !== "") {
         saveGetUpdatesBuf(syncFilePath, resp.get_updates_buf);
         getUpdatesBuf = resp.get_updates_buf;
         aLog.debug(`Saved new get_updates_buf (${getUpdatesBuf.length} bytes)`);
       }
-      
+
       const list = resp.msgs ?? [];
       for (const full of list) {
         const summary = extractSummary(full);
@@ -152,6 +154,16 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
 
         // Pre-warm the config cache just in case we add reply functionality
         await configManager.getForUser(fromUserId, full.context_token);
+
+        if (onMessage) {
+          try {
+            await onMessage(full);
+            aLog.info(`onMessage callback executed successfully`);
+          } catch (cbErr) {
+            aLog.error(`onMessage callback error: ${String(cbErr)}`);
+            console.error(`[Error] onMessage 回调执行失败:`, cbErr);
+          }
+        }
       }
     } catch (err) {
       if (abortSignal?.aborted) {

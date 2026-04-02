@@ -6,28 +6,17 @@ import { deriveRawAccountId } from "../auth/accounts.js";
 import { resolveStateDir } from "./state-dir.js";
 
 function resolveAccountsDir(): string {
-  return path.join(resolveStateDir(), "openclaw-weixin", "accounts");
+  return path.join(resolveStateDir(), "accounts");
 }
 
 /**
  * Path to the persistent get_updates_buf file for an account.
- * Stored alongside account data: ~/.openclaw/openclaw-weixin/accounts/{accountId}.sync.json
+ * Stored alongside account data: ~/.weixin-bot-cli/accounts/{accountId}.sync.json
  */
 export function getSyncBufFilePath(accountId: string): string {
   return path.join(resolveAccountsDir(), `${accountId}.sync.json`);
 }
 
-/** Legacy single-account syncbuf (pre multi-account): `.openclaw-weixin-sync/default.json`. */
-function getLegacySyncBufDefaultJsonPath(): string {
-  return path.join(
-    resolveStateDir(),
-    "agents",
-    "default",
-    "sessions",
-    ".openclaw-weixin-sync",
-    "default.json",
-  );
-}
 
 export type SyncBufData = {
   get_updates_buf: string;
@@ -48,17 +37,12 @@ function readSyncBufFile(filePath: string): string | undefined {
 
 /**
  * Load persisted get_updates_buf.
- * Falls back in order:
- *   1. Primary path (normalized accountId, new installs)
- *   2. Compat path (raw accountId derived from pattern, old installs)
- *   3. Legacy single-account path (very old installs without multi-account support)
  */
 export function loadGetUpdatesBuf(filePath: string): string | undefined {
   const value = readSyncBufFile(filePath);
   if (value !== undefined) return value;
 
   // Compat: if given path uses a normalized accountId (e.g. "b0f5860fdecb-im-bot.sync.json"),
-  // also try the old raw-ID filename (e.g. "b0f5860fdecb@im.bot.sync.json").
   const accountId = path.basename(filePath, ".sync.json");
   const rawId = deriveRawAccountId(accountId);
   if (rawId) {
@@ -67,8 +51,6 @@ export function loadGetUpdatesBuf(filePath: string): string | undefined {
     if (compatValue !== undefined) return compatValue;
   }
 
-  // Legacy fallback: old single-account installs stored syncbuf without accountId.
-  return readSyncBufFile(getLegacySyncBufDefaultJsonPath());
 }
 
 /**

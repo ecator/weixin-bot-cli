@@ -16,11 +16,11 @@ let tmpDir: string;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-buf-test-"));
-  process.env.OPENCLAW_STATE_DIR = tmpDir;
+  process.env.WEIXIN_BOT_CLI_HOME = tmpDir;
 });
 
 afterEach(() => {
-  delete process.env.OPENCLAW_STATE_DIR;
+  delete process.env.WEIXIN_BOT_CLI_HOME;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -33,7 +33,7 @@ describe("getSyncBufFilePath", () => {
   it("returns path under accounts dir", async () => {
     const { getSyncBufFilePath } = await loadModule();
     const result = getSyncBufFilePath("myacc");
-    expect(result).toBe(path.join(tmpDir, "openclaw-weixin", "accounts", "myacc.sync.json"));
+    expect(result).toBe(path.join(tmpDir, "accounts", "myacc.sync.json"));
   });
 });
 
@@ -56,21 +56,12 @@ describe("loadGetUpdatesBuf", () => {
     const { loadGetUpdatesBuf, getSyncBufFilePath } = await loadModule();
     const fp = getSyncBufFilePath("abc-im-bot");
     // Write at old raw-ID filename
-    const dir = path.join(tmpDir, "openclaw-weixin", "accounts");
+    const dir = path.join(tmpDir, "accounts");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "abc@im.bot.sync.json"), JSON.stringify({ get_updates_buf: "compat-buf" }));
     expect(loadGetUpdatesBuf(fp)).toBe("compat-buf");
   });
 
-  it("falls back to legacy sync buf path", async () => {
-    const { loadGetUpdatesBuf, getSyncBufFilePath } = await loadModule();
-    const fp = getSyncBufFilePath("someacc");
-    // Write at legacy path
-    const legacyDir = path.join(tmpDir, "agents", "default", "sessions", ".openclaw-weixin-sync");
-    fs.mkdirSync(legacyDir, { recursive: true });
-    fs.writeFileSync(path.join(legacyDir, "default.json"), JSON.stringify({ get_updates_buf: "legacy-buf" }));
-    expect(loadGetUpdatesBuf(fp)).toBe("legacy-buf");
-  });
 
   it("returns undefined on corrupted file", async () => {
     const { loadGetUpdatesBuf, getSyncBufFilePath } = await loadModule();

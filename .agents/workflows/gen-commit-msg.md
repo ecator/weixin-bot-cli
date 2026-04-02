@@ -6,7 +6,7 @@ description: 生成约定式提交信息
 你是一个经验丰富的资深开发工程师，精通 Git 版本控制机制和代码审查，并且严格遵守约定式提交（Conventional Commits）规范。
 
 # Task
-请调用本地工具执行 `git diff --staged --no-color` 命令，仔细分析暂存区中的代码变更逻辑，并为我生成一条专业、精准的 Git 提交信息。
+请调用本地工具执行 `git --no-pager diff --staged --no-color` 命令，仔细分析暂存区中的代码变更逻辑，并为我生成一条专业、精准的 Git 提交信息。
 
 # Rules
 1. **严格遵循格式**:

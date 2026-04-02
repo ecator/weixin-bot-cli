@@ -15,22 +15,25 @@ import {
 import { monitorWeixinProvider } from "./monitor/monitor.js";
 import { sendMessageWeixin } from "./messaging/send.js";
 import { logger } from "./util/logger.js";
+import type { WeixinMessage } from "./api/types.js";
+import { extractSummary } from "./monitor/monitor.js";
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf-8"));
 
 const program = new Command();
 
 program
   .name("weixin-bot-cli")
   .description("Weixin Bot CLI for receiving messages")
-  .version("1.0.0")
+  .version(pkg.version)
   .option("-d, --dir <path>", "Home directory for data storage (overrides ~/.weixin-bot-cli)")
-  .option("-h, --home <path>", "Alias for --dir")
-  .hook("preAction", (thisCommand) => {
-    const opts = thisCommand.opts();
-    const homeDir = opts.home || opts.dir;
-    if (homeDir) {
-      process.env.WEIXIN_BOT_HOME = homeDir;
-    }
-  });
+  .option("-h, --home <path>", "Alias for --dir");
 
 program
   .command("login")
@@ -89,20 +92,39 @@ program
       console.error("❌ 未找到已登录的账号，请先运行 `weixin-bot-cli login`。");
       process.exit(1);
     }
-    
+
     const accountId = ids[0];
     const accountInfo = resolveWeixinAccount(accountId);
-    
+
     if (!accountInfo.token) {
       console.error(`❌ 账号 ${accountId} 凭证无效或未配置。`);
       process.exit(1);
     }
+
+    const onMessage = async (msg: WeixinMessage) => {
+      const to = msg.from_user_id ?? "unknown";
+      try {
+        await sendMessageWeixin({
+          to,
+          text: `已收到：${extractSummary(msg)}`,
+          opts: {
+            baseUrl: accountInfo.baseUrl,
+            token: accountInfo.token,
+          }
+        });
+        console.log(`✅ 消息已成功回复给: ${to}`);
+      } catch (err) {
+        console.error("❌ 消息回复失败:", err);
+        process.exit(1);
+      }
+    };
 
     try {
       await monitorWeixinProvider({
         baseUrl: accountInfo.baseUrl,
         token: accountInfo.token,
         accountId: accountInfo.accountId,
+        onMessage,
       });
     } catch (err) {
       console.error("❌ 监听发生错误:", err);
@@ -111,25 +133,46 @@ program
   });
 
 program
-  .command("send <to> <text>")
-  .description("Send a text message to a specific WeChat user")
+  .command("send <to> [text]")
+  .description("发送消息，如果没有提供文本，则从标准输入读取。")
   .action(async (to, text) => {
     const ids = listIndexedWeixinAccountIds();
     if (ids.length === 0) {
       console.error("❌ 未找到已登录的账号，请先运行 `weixin-bot-cli login`。");
       process.exit(1);
     }
-    
+
     const accountInfo = resolveWeixinAccount(ids[0]);
     if (!accountInfo.token) {
       console.error("❌ 账号凭证无效。");
       process.exit(1);
     }
 
+    let messageText = text;
+    if (!messageText) {
+      try {
+        messageText = await new Promise<string>((resolve, reject) => {
+          let buf = "";
+          process.stdin.setEncoding("utf-8");
+          process.stdin.on("data", (chunk) => { buf += chunk; });
+          process.stdin.on("end", () => resolve(buf.trim()));
+          process.stdin.on("error", reject);
+        });
+      } catch (err) {
+        console.error("❌ 读取标准输入失败:", err);
+        process.exit(1);
+      }
+    }
+
+    if (!messageText) {
+      console.error("❌ 消息内容不能为空。");
+      process.exit(1);
+    }
+
     try {
       await sendMessageWeixin({
         to,
-        text,
+        text: messageText,
         opts: {
           baseUrl: accountInfo.baseUrl,
           token: accountInfo.token,

@@ -48,6 +48,8 @@ npx @ecat/weixin-bot-cli start
 
 ```bash
 npx @ecat/weixin-bot-cli send <接收方的_user_id> "Hello，这是来自命令行的测试消息！"
+# 或者通过标准输入发送大段内容
+cat message.txt | npx @ecat/weixin-bot-cli send <接收方的_user_id>
 ```
 
 ## 项目目录架构
