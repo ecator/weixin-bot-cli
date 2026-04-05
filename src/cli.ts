@@ -14,6 +14,7 @@ import {
 } from "./auth/accounts.js";
 import { monitorWeixinProvider } from "./monitor/monitor.js";
 import { sendMessageWeixin } from "./messaging/send.js";
+import { sendWeixinMediaFile } from "./messaging/send-media.js";
 import { logger } from "./util/logger.js";
 import type { WeixinMessage } from "./api/types.js";
 import { extractSummary } from "./monitor/monitor.js";
@@ -95,8 +96,8 @@ program
 
 program
   .command("start")
-  .description("Start polling for incoming messages")
-  .option("--acp-cmd <command>", "Command to start the ACP agent (e.g., npx, gemini)")
+  .description("Start polling for incoming messages, and reply to messages using ACP if --acp-cmd is provided")
+  .option("--acp-cmd <command>", "Command to start the ACP agent (e.g. \"gemini --acp\")")
   .option("--acp-session <sessionId>", "Reuse an existing ACP session ID")
   .action(async (opts) => {
     const ids = listIndexedWeixinAccountIds();
@@ -244,8 +245,9 @@ program
 
 program
   .command("send <to> [text]")
-  .description("发送消息，如果没有提供文本，则从标准输入读取。")
-  .action(async (to, text) => {
+  .description("Send a message to a WeChat user. If no text is provided, reads from stdin. Use --files to attach files.")
+  .option("--files <paths...>", "Send one or more files (image/video/document)")
+  .action(async (to, text, opts) => {
     const ids = listIndexedWeixinAccountIds();
     if (ids.length === 0) {
       console.error("❌ 未找到已登录的账号，请先运行 `weixin-bot-cli login`。");
@@ -258,8 +260,9 @@ program
       process.exit(1);
     }
 
-    let messageText = text;
-    if (!messageText) {
+    // 1. 处理文本：有则直接用，没有并且没有传递文件则读 stdin
+    let messageText = text as string | undefined;
+    if (!messageText && (opts.files ?? []).length == 0) {
       try {
         messageText = await new Promise<string>((resolve, reject) => {
           let buf = "";
@@ -274,24 +277,46 @@ program
       }
     }
 
-    if (!messageText) {
-      console.error("❌ 消息内容不能为空。");
+    if (!messageText && !opts.files?.length) {
+      console.error("❌ 消息内容和文件不能同时为空。");
       process.exit(1);
     }
 
-    try {
-      await sendMessageWeixin({
-        to,
-        text: messageText,
-        opts: {
-          baseUrl: accountInfo.baseUrl,
-          token: accountInfo.token,
-        }
-      });
-      console.log(`✅ 消息已成功发送给: ${to}`);
-    } catch (err) {
-      console.error("❌ 消息发送失败:", err);
-      process.exit(1);
+    // 2. 先发文本
+    if (messageText) {
+      try {
+        await sendMessageWeixin({
+          to,
+          text: messageText,
+          opts: { baseUrl: accountInfo.baseUrl, token: accountInfo.token },
+        });
+        console.log(`✅ 消息已成功发送给: ${to}`);
+      } catch (err) {
+        console.error("❌ 消息发送失败:", err);
+        process.exit(1);
+      }
+    }
+
+    // 3. 再发文件
+    const filePaths: string[] = opts.files ?? [];
+    for (const [index, filePath] of filePaths.entries()) {
+      if (!fs.existsSync(filePath)) {
+        console.error(`❌ 文件不存在，跳过: ${filePath}`);
+        continue;
+      }
+      try {
+        console.log(`[${index + 1}/${filePaths.length}] 🚀 正在发送文件: ${filePath}`);
+        const result = await sendWeixinMediaFile({
+          filePath,
+          to,
+          text: "",
+          opts: { baseUrl: accountInfo.baseUrl, token: accountInfo.token },
+          cdnBaseUrl: accountInfo.cdnBaseUrl,
+        });
+        console.log(`✅ 文件发送成功 (ID: ${result.messageId})`);
+      } catch (err) {
+        console.error(`❌ 文件 [${filePath}] 发送失败:`, err);
+      }
     }
   });
 

@@ -64,6 +64,12 @@ npx @ecat/weixin-bot-cli send <接收方的_user_id> "Hello，这是来自命令
 cat message.txt | npx @ecat/weixin-bot-cli send <接收方的_user_id>
 ```
 
+可以通过`--files`来发送文件。
+
+```bash
+npx @ecat/weixin-bot-cli send <接收方的_user_id> [可选的文本消息] --files cat.jpg dog.mp3 bird.docx monkey.xlsx
+```
+
 ## 项目目录架构
 
 - `src/cli.ts` - 核心命令入口，定义了 Commander 路由与其绑定的命令事件。
