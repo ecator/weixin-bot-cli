@@ -18,6 +18,7 @@ import { logger } from "./util/logger.js";
 import type { WeixinMessage } from "./api/types.js";
 import { extractSummary } from "./monitor/monitor.js";
 import { AcpManager } from "./acp/client.js";
+import { getConfig, sendTyping } from "./api/api.js";
 
 import fs from "fs";
 import path from "path";
@@ -152,7 +153,56 @@ program
           try {
             console.log(`\n💬 将消息发送给Agent: ${userText}`);
             console.log(`⏳ 等待Agent响应...`);
+
+            // 获取"正在输入"状态的ticket
+            let typingInterval: NodeJS.Timeout | undefined;
+            let typingTicket: string | undefined;
+            try {
+              const cfg = await getConfig({
+                baseUrl: accountInfo.baseUrl,
+                token: accountInfo.token,
+                ilinkUserId: to,
+                contextToken: msg.context_token,
+              });
+              if (cfg.typing_ticket) {
+                typingTicket = cfg.typing_ticket;
+              };
+
+            } catch (err) {
+              console.error(`⚠️ 获取打字状态配置失败: ${String(err)}`);
+            }
+
+            // 定义发送"正在输入"状态的函数, status: 1表示正在输入, 2表示取消
+            const triggerTyping = async (status: 1 | 2) => {
+              if (!typingTicket) {
+                return;
+              }
+              try {
+                await sendTyping({
+                  baseUrl: accountInfo.baseUrl,
+                  token: accountInfo.token,
+                  body: {
+                    ilink_user_id: to,
+                    typing_ticket: typingTicket,
+                    status: status,
+                  },
+                });
+              } catch (e) {
+                // 静默忽略定时状态重发过程中的偶尔网络波动
+              }
+            }
+            // 立即发送第一次"正在输入"状态
+            triggerTyping(1);
+            // 随后每隔 10 秒刷新一次"正在输入"状态，防止回复时间过长导致"正在输入"状态超时
+            typingInterval = setInterval(() => { void triggerTyping(1); }, 10_000);
+
+            // 转发给Agent获取回复
             const agentResponse = await acpManager.prompt(acpSessionId, userText);
+
+            clearInterval(typingInterval); // Agent响应后，清除重发定时器
+            // 取消"正在输入"状态
+            triggerTyping(2);
+
             if (agentResponse) {
               replyText = agentResponse;
             } else {
