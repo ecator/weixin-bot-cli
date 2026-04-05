@@ -19,7 +19,7 @@
 
 ## 使用方法
 
-账号配置文件和状态数据的默认存放路径为用户的 `~/.weixin-bot-cli`。如果需要修改数据目录，你可以通过 `-h` 或 `--home` 参数进行覆盖，同样也支持设置 `WEIXIN_BOT_HOME` 环境变量。
+账号配置文件和状态数据的默认存放路径为用户的 `~/.weixin-bot-cli`。如果需要修改数据目录，你可以通过 `-h` 或 `--home` 参数进行覆盖，同样也支持设置 `WEIXIN_BOT_CLI_HOME` 环境变量。
 
 ### 1. 登录
 
@@ -41,6 +41,18 @@ npx @ecat/weixin-bot-cli --home D:/my-data login
 npx @ecat/weixin-bot-cli start
 ```
 
+也可以启动ACP客户端连接ACP服务端，实现智能回复。
+
+```bash
+npx @ecat/weixin-bot-cli start --acp-cmd "gemini --acp" 
+```
+
+如果需要复用原来的session可以使用--acp-session参数指定session id。
+
+```bash
+npx @ecat/weixin-bot-cli start --acp-cmd "gemini --acp" --acp-session "session-123"
+```
+
 ### 3. 发送消息
 
 你可以在不中断 CLI 运行的情况下（或开个新终端），通过命令行的形式给特定的用户发送纯文本消息。（注：必须携带接收方的 微信 User ID）
@@ -59,6 +71,7 @@ cat message.txt | npx @ecat/weixin-bot-cli send <接收方的_user_id>
 - `src/api/` - 底层通信实现，对 iLink API 进行了直接封装（包括 `getupdates`, `sendmessage`, `getconfig` 等）。
 - `src/monitor/` - 核心长轮询工作器 Worker 处理循环逻辑。
 - `src/messaging/` - 消息发送模块，暴露可以独立发文本、处理内部 Markdown 以及组装 WeChat 发送上下文的基础 API。
+- `src/acp/` - Agent Client Protocol 客户端，用于与 Agent Client Protocol 服务器进行通信。
 
 ## 开发
 

@@ -30,6 +30,9 @@
    - 虽然现在已经完全与 AI 解绑，但在 `getUpdates` 期间服务器下发的 `context_token` 等状态绑定必须被遵循。
    - 如果用户执行 CLI 中的发送命令功能，本质是在直接触发 `sendMessageWeixin` 。
 
+5. **Agent Client Protocol (ACP)**:
+   可以作用ACP客户端连接ACP服务端，连接微信和ACP，这样就能实现一个简易版本的智能回复。
+
 ## 需了解的关键目录映射
 
 - `src/api/`: 类型良好的 API 请求代理器封装地以及主要发包函数 `apiPostFetch` (承载着固定了官方 WeChat Headers，各个基础 version，甚至 User-Agents 伪装的核心逻辑)。
@@ -39,6 +42,9 @@
 - `src/media/`: 对各类富媒体资源进行处理，例如将音频从微信的特殊 `silk` 格式转写映射成系统普遍可识别的 `wav` 等（由 `silk-wasm` 驱动）,包含媒体解密算法等。
 - `src/messaging/`: 下发负荷结构的拼装层（`send.ts`），以及核心的人类输入数据结构体转化层（`inbound.ts`）。
 - `src/monitor/`: 长轮询长队列拉起节点。
+- `src/acp/`: Agent Client Protocol (ACP) 实现，用于与 Agent Client Protocol 服务器进行通信。
+  - 主要实现Client端，用于和Agent端通讯，具体ACP协议可以参考[Agent Client Protocol](https://agentclientprotocol.com/llms.txt)
+  - 这次使用了[ACP TypeScript Library](https://agentclientprotocol.github.io/typescript-sdk/index.html)
 
 ## 对于 AI 编写/维护工具的典型指导思想
 

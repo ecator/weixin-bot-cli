@@ -17,6 +17,7 @@ import { sendMessageWeixin } from "./messaging/send.js";
 import { logger } from "./util/logger.js";
 import type { WeixinMessage } from "./api/types.js";
 import { extractSummary } from "./monitor/monitor.js";
+import { AcpManager } from "./acp/client.js";
 
 import fs from "fs";
 import path from "path";
@@ -33,7 +34,15 @@ program
   .description("Weixin Bot CLI for receiving messages")
   .version(pkg.version)
   .option("-d, --dir <path>", "Home directory for data storage (overrides ~/.weixin-bot-cli)")
-  .option("-h, --home <path>", "Alias for --dir");
+  .option("-h, --home <path>", "Alias for --dir")
+  .hook("preAction", (thisCommand) => {
+    const opts = thisCommand.opts();
+    const homeDir = opts.home || opts.dir;
+    if (homeDir) {
+      process.env.WEIXIN_BOT_CLI_HOME = homeDir;
+      console.log(`WEIXIN_BOT_CLI_HOME overrides to: ${homeDir}`);
+    }
+  });
 
 program
   .command("login")
@@ -86,7 +95,9 @@ program
 program
   .command("start")
   .description("Start polling for incoming messages")
-  .action(async () => {
+  .option("--acp-cmd <command>", "Command to start the ACP agent (e.g., npx, gemini)")
+  .option("--acp-session <sessionId>", "Reuse an existing ACP session ID")
+  .action(async (opts) => {
     const ids = listIndexedWeixinAccountIds();
     if (ids.length === 0) {
       console.error("❌ 未找到已登录的账号，请先运行 `weixin-bot-cli login`。");
@@ -101,25 +112,74 @@ program
       process.exit(1);
     }
 
+    let acpManager: AcpManager | null = null;
+    let acpSessionId: string | null = null;
+
+    if (opts.acpCmd) {
+      console.log(`🚀 正在启动Agent: ${opts.acpCmd}`);
+      const acpCmdList = opts.acpCmd.split(" ");
+      acpManager = new AcpManager(acpCmdList[0], acpCmdList.slice(1));
+      try {
+        const acpIntialResult = await acpManager.connect();
+        console.log(`🔗 ACP初始化结果:`);
+        console.log(JSON.stringify(acpIntialResult, null, 2));
+        console.log(`🤖 现有会话列表:`);
+        for (const s of await acpManager.listSessions()) {
+          console.log(`   - ${s}`);
+        }
+        if (opts.acpSession) {
+          acpSessionId = opts.acpSession;
+          console.log(`⏳ 加载会话: ${acpSessionId}`)
+          await acpManager.loadSession(acpSessionId!);
+          console.log(`\n💬 复用会话: ${acpSessionId}`);
+        } else {
+          acpSessionId = await acpManager.createSession();
+          console.log(`\n🆕 创建新会话: ${acpSessionId}`);
+        }
+      } catch (err) {
+        console.error("❌ 无法连接到Agent:", err);
+        process.exit(1);
+      }
+    }
+
     const onMessage = async (msg: WeixinMessage) => {
       const to = msg.from_user_id ?? "unknown";
       try {
+        const userText = extractSummary(msg);
+        let replyText = `已收到：${userText}`;
+
+        if (acpManager && acpSessionId) {
+          try {
+            console.log(`\n💬 将消息发送给Agent: ${userText}`);
+            console.log(`⏳ 等待Agent响应...`);
+            const agentResponse = await acpManager.prompt(acpSessionId, userText);
+            if (agentResponse) {
+              replyText = agentResponse;
+            } else {
+              replyText = "Agent没有返回任何文本。";
+            }
+          } catch (err) {
+            console.error("❌ Agent处理该消息时发生错误:", err);
+            replyText = `[Agent Error]\n${JSON.stringify(err)}`;
+          }
+        }
+
         await sendMessageWeixin({
           to,
-          text: `已收到：${extractSummary(msg)}`,
+          text: replyText,
           opts: {
             baseUrl: accountInfo.baseUrl,
             token: accountInfo.token,
           }
         });
-        console.log(`✅ 消息已成功回复给: ${to}`);
+        console.log(`\n✅ 消息已成功回复给: ${to}`);
       } catch (err) {
-        console.error("❌ 消息回复失败:", err);
-        process.exit(1);
+        console.error("\n❌ 消息回复失败:", err);
       }
     };
 
     try {
+      console.log("\n⏳ 开始监听微信消息...");
       await monitorWeixinProvider({
         baseUrl: accountInfo.baseUrl,
         token: accountInfo.token,
