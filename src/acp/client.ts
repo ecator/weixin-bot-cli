@@ -137,9 +137,10 @@ export class AcpManager {
             throw new Error("Connection already initialized. Call close() first.");
         }
         // Spawn the agent as a subprocess
-        const cmd = process.platform === "win32" ? "cmd" : "bash";
-        const cmdArgs = process.platform === "win32" ? ["/c", this.agentCmd, ...this.agentArgs] : ["-c", `${this.agentCmd} ${this.agentArgs.join(" ")}`];
-        this.agentProcess = spawn(cmd, cmdArgs, {
+        const cmd = process.platform === "win32" ?
+            ["cmd", "/c", this.agentCmd, ...this.agentArgs] :
+            ["bash", "-c", `${this.agentCmd} ${this.agentArgs.join(" ")}`];
+        this.agentProcess = spawn(cmd[0], cmd.slice(1), {
             stdio: ["pipe", "pipe", "inherit"],
         });
 

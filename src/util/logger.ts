@@ -24,7 +24,7 @@ const LEVEL_IDS: Record<string, number> = {
 const DEFAULT_LOG_LEVEL = "INFO";
 
 function resolveMinLevel(): number {
-  const env = process.env.OPENCLAW_LOG_LEVEL?.toUpperCase();
+  const env = process.env.WEIXIN_BOT_CLI_LOG_LEVEL?.toUpperCase();
   if (env && env in LEVEL_IDS) return LEVEL_IDS[env];
   return LEVEL_IDS[DEFAULT_LOG_LEVEL];
 }

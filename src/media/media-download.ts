@@ -1,4 +1,18 @@
-import type { WeixinInboundMediaOpts } from "../messaging/inbound.js";
+export type WeixinInboundMediaOpts = {
+  /** Local path to decrypted image file. */
+  decryptedPicPath?: string;
+  /** Local path to transcoded/raw voice file (.wav or .silk). */
+  decryptedVoicePath?: string;
+  /** MIME type for the voice file (e.g. "audio/wav" or "audio/silk"). */
+  voiceMediaType?: string;
+  /** Local path to decrypted file attachment. */
+  decryptedFilePath?: string;
+  /** MIME type for the file attachment (guessed from file_name). */
+  fileMediaType?: string;
+  /** Local path to decrypted video file. */
+  decryptedVideoPath?: string;
+};
+
 import { logger } from "../util/logger.js";
 import { getMimeFromFilename } from "./mime.js";
 import {

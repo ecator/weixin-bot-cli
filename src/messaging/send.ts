@@ -1,4 +1,3 @@
-// Local standalone stripMarkdown to remove openclaw dependency
 export function stripMarkdown(str: string): string {
   return str.replace(/([_*~`])/g, '');
 }
@@ -11,7 +10,7 @@ import { MessageItemType, MessageState, MessageType } from "../api/types.js";
 import type { UploadedFileInfo } from "../cdn/upload.js";
 
 function generateClientId(): string {
-  return generateId("openclaw-weixin");
+  return generateId("weixin-bot-cli");
 }
 
 /**
