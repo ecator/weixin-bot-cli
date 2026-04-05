@@ -20,4 +20,4 @@ jobs:
            corepack enable
            pnpm i
            pnpm build
-           pnpm publish
+           pnpm publish --no-git-checks
