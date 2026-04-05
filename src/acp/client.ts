@@ -138,7 +138,7 @@ export class AcpManager {
         }
         // Spawn the agent as a subprocess
         const cmd = process.platform === "win32" ? "cmd" : "bash";
-        const cmdArgs = process.platform === "win32" ? ["/c", this.agentCmd, ...this.agentArgs] : ["-c", `"${this.agentCmd} ${this.agentArgs.join(" ")}"`];
+        const cmdArgs = process.platform === "win32" ? ["/c", this.agentCmd, ...this.agentArgs] : ["-c", `${this.agentCmd} ${this.agentArgs.join(" ")}`];
         this.agentProcess = spawn(cmd, cmdArgs, {
             stdio: ["pipe", "pipe", "inherit"],
         });
