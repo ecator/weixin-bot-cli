@@ -8,6 +8,7 @@ export interface CachedConfig {
 const CONFIG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CONFIG_CACHE_INITIAL_RETRY_MS = 2_000;
 const CONFIG_CACHE_MAX_RETRY_MS = 60 * 60 * 1000;
+const CONFIG_CACHE_MAX_SIZE = 10_000;
 
 interface ConfigCacheEntry {
   config: CachedConfig;
@@ -19,6 +20,9 @@ interface ConfigCacheEntry {
 /**
  * Per-user getConfig cache with periodic random refresh (within 24h) and
  * exponential-backoff retry (up to 1h) on failure.
+ *
+ * Capped at CONFIG_CACHE_MAX_SIZE entries; oldest entries are evicted first
+ * to prevent unbounded memory growth during long-running sessions.
  */
 export class WeixinConfigManager {
   private cache = new Map<string, ConfigCacheEntry>();
@@ -27,6 +31,18 @@ export class WeixinConfigManager {
     private apiOpts: { baseUrl: string; token?: string },
     private log: (msg: string) => void,
   ) {}
+
+  /** Evict the oldest entry when cache exceeds max size. */
+  private evictIfNeeded(): void {
+    while (this.cache.size > CONFIG_CACHE_MAX_SIZE) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) {
+        this.cache.delete(oldest);
+      } else {
+        break;
+      }
+    }
+  }
 
   async getForUser(userId: string, contextToken?: string): Promise<CachedConfig> {
     const now = Date.now();
@@ -49,6 +65,7 @@ export class WeixinConfigManager {
             nextFetchAt: now + Math.random() * CONFIG_CACHE_TTL_MS,
             retryDelayMs: CONFIG_CACHE_INITIAL_RETRY_MS,
           });
+          this.evictIfNeeded();
           this.log(
             `[weixin] config ${entry?.everSucceeded ? "refreshed" : "cached"} for ${userId}`,
           );
