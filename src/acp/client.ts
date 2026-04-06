@@ -100,16 +100,21 @@ class Client implements acp.Client {
         const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
         const content: string[] = [];
         let i = 0;
-        const startLine = params.line ?? 1;
-        const endLine = params.limit ? startLine + params.limit : Number.MAX_VALUE;
-        for await (const line of rl) {
-            i++;
-            if (i >= startLine && i <= endLine) {
-                content.push(line);
+        const startLine = Math.max(params.line ?? 1, 1);
+        const endLine = params.limit ? startLine + params.limit - 1 : Number.MAX_VALUE;
+        try {
+            for await (const line of rl) {
+                i++;
+                if (i >= startLine && i <= endLine) {
+                    content.push(line);
+                }
+                if (i > endLine) {
+                    break;
+                }
             }
-            if (i > endLine) {
-                break;
-            }
+        } finally {
+            rl.close();
+            stream.destroy();
         }
 
         return {
