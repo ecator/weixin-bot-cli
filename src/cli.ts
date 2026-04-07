@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 
 import { startWeixinLoginWithQr, waitForWeixinLogin } from "./auth/login-qr.js";
 import {
@@ -20,6 +20,8 @@ import type { WeixinMessage } from "./api/types.js";
 import { extractSummary } from "./monitor/monitor.js";
 import { AcpManager } from "./acp/client.js";
 import { getConfig, sendTyping } from "./api/api.js";
+import { WeixinConfigManager } from "./api/config-cache.js";
+import type { Logger } from "./util/logger.js";
 
 import fs from "fs";
 import path from "path";
@@ -99,6 +101,16 @@ program
   .description("Start polling for incoming messages, and reply to messages using ACP if --acp-cmd is provided")
   .option("--acp-cmd <command>", "Command to start the ACP agent (e.g. \"gemini --acp\")")
   .option("--acp-session <sessionId>", "Reuse an existing ACP session ID")
+  .option("--acp-timeout <seconds>", "Timeout in seconds for each ACP prompt", (value) => {
+    const n = Number(value);
+    if (Number.isNaN(n)) {
+      throw new InvalidArgumentError(`"${value}" is not a valid number.`);
+    }
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new InvalidArgumentError("Must be a positive integer.");
+    }
+    return n;
+  }, 600)
   .action(async (opts) => {
     const ids = listIndexedWeixinAccountIds();
     if (ids.length === 0) {
@@ -143,7 +155,8 @@ program
         process.exit(1);
       }
     }
-
+    const aLog: Logger = logger.withAccount(accountId);
+    const configManager = new WeixinConfigManager({ baseUrl: accountInfo.baseUrl, token: accountInfo.token }, (msg) => aLog.debug(msg));
     const onMessage = async (msg: WeixinMessage) => {
       const to = msg.from_user_id ?? "unknown";
       try {
@@ -155,23 +168,7 @@ program
           console.log(`⏳ 等待Agent响应...`);
 
           // 获取"正在输入"状态的ticket
-          let typingInterval: NodeJS.Timeout | undefined;
-          let typingTicket: string | undefined;
-          try {
-            const cfg = await getConfig({
-              baseUrl: accountInfo.baseUrl,
-              token: accountInfo.token,
-              ilinkUserId: to,
-              contextToken: msg.context_token,
-            });
-            if (cfg.typing_ticket) {
-              typingTicket = cfg.typing_ticket;
-            };
-
-          } catch (err) {
-            console.error(`⚠️ 获取打字状态配置失败: ${String(err)}`);
-          }
-
+          const { typingTicket } = await configManager.getForUser(to, msg.context_token);
           // 定义发送"正在输入"状态的函数, status: 1表示正在输入, 2表示取消
           const triggerTyping = async (status: 1 | 2) => {
             if (!typingTicket) {
@@ -194,11 +191,12 @@ program
           // 立即发送第一次"正在输入"状态
           triggerTyping(1);
           // 随后每隔 10 秒刷新一次"正在输入"状态，防止回复时间过长导致"正在输入"状态超时
-          typingInterval = setInterval(() => { void triggerTyping(1); }, 10_000);
+          const typingInterval = setInterval(() => { void triggerTyping(1); }, 10_000);
 
           try {
             // 转发给Agent获取回复
-            const agentResponse = await acpManager.prompt(acpSessionId, userText);
+            const acpTimeoutMs = opts.acpTimeout * 1000;
+            const agentResponse = await acpManager.prompt(acpSessionId, userText, acpTimeoutMs);
             if (agentResponse) {
               replyText = agentResponse;
             } else {
@@ -206,7 +204,9 @@ program
             }
           } catch (err) {
             console.error("❌ Agent处理该消息时发生错误:", err);
-            replyText = `[Agent Error]\n${JSON.stringify(err)}`;
+            const errStr = err instanceof Error ? err.message : String(err);
+            aLog.error(`onMessage callback error: ${errStr}`);
+            replyText = `[Agent Error]\n${errStr}`;
           } finally {
             // Agent响应后，清除重发定时器
             clearInterval(typingInterval);
@@ -226,6 +226,7 @@ program
         console.log(`\n✅ 消息已成功回复给: ${to}`);
       } catch (err) {
         console.error("\n❌ 消息回复失败:", err);
+        aLog.error(`onMessage callback error: ${String(err)}`);
       }
     };
 
@@ -239,6 +240,7 @@ program
       });
     } catch (err) {
       console.error("❌ 监听发生错误:", err);
+      aLog.error(`monitorWeixinProvider error: ${String(err)}`);
       process.exit(1);
     }
   });

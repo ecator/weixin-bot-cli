@@ -6,7 +6,21 @@ import readline from "node:readline/promises";
 import * as acp from "@agentclientprotocol/sdk";
 
 class Client implements acp.Client {
-    public agentMessage: string = "";
+    /** Collected response chunks; joined only when prompt() returns. */
+    public messageChunks: string[] = [];
+
+    /** Reset chunk buffer — call at the start of each prompt. */
+    resetMessage(): void {
+        this.messageChunks = [];
+    }
+
+    /** Join collected chunks into the final reply string and reset the buffer. */
+    getFullMessage(): string {
+        const msg = this.messageChunks.join("");
+        this.resetMessage();
+        return msg;
+    }
+
     async requestPermission(
         params: acp.RequestPermissionRequest,
     ): Promise<acp.RequestPermissionResponse> {
@@ -46,7 +60,7 @@ class Client implements acp.Client {
                 console.log(`  🤖[${update.content.type}]`);
                 if (update.content.type === "text") {
                     process.stdout.write(update.content.text);
-                    this.agentMessage += update.content.text;
+                    this.messageChunks.push(update.content.text);
                 }
                 break;
             case "tool_call":
@@ -219,14 +233,18 @@ export class AcpManager {
         return sessionResult.sessionId;
     }
 
-    public async prompt(sessionId: string, text: string): Promise<string> {
+    /**
+     * Send a prompt and return the agent's full text reply.
+     * Includes a timeout guard (default 10 min) to prevent indefinite hangs.
+     */
+    public async prompt(sessionId: string, text: string, timeoutMs = 10 * 60 * 1000): Promise<string> {
         if (!this.connection) {
             throw new Error("Connection not initialized. Call connect() first.");
         }
 
+        this.client.resetMessage();
 
-        this.client.agentMessage = "";
-        await this.connection.prompt({
+        const promptPromise = this.connection.prompt({
             sessionId: sessionId,
             prompt: [
                 {
@@ -236,7 +254,26 @@ export class AcpManager {
             ],
         });
 
-        return this.client.agentMessage;
+        // Guard against Agent hanging forever (and chunks piling up).
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => {
+                this.connection?.cancel({ sessionId: sessionId });
+                reject(new Error(`ACP prompt timed out after ${timeoutMs / 1000}s`));
+            }, timeoutMs);
+            // Allow the process to exit even if this timer is pending.
+            if (typeof timeoutHandle === "object" && "unref" in timeoutHandle) timeoutHandle.unref();
+        });
+
+        try {
+            await Promise.race([promptPromise, timeoutPromise]);
+        } finally {
+            // Clear the timer so it won't fire a stray reject (unhandled rejection)
+            // after promptPromise has already won the race.
+            clearTimeout(timeoutHandle);
+        }
+
+        return this.client.getFullMessage();
     }
 
     public close(): void {
