@@ -4,6 +4,8 @@ import { Writable, Readable } from "node:stream";
 import readline from "node:readline/promises";
 
 import * as acp from "@agentclientprotocol/sdk";
+import { logger } from "../util/logger.js";
+
 
 class Client implements acp.Client {
     /** Collected response chunks; joined only when prompt() returns. */
@@ -24,16 +26,16 @@ class Client implements acp.Client {
     async requestPermission(
         params: acp.RequestPermissionRequest,
     ): Promise<acp.RequestPermissionResponse> {
-        console.log(`\n🔐 Permission requested: ${params.toolCall.title}`);
+        logger.debug(`\n🔐 Permission requested: ${params.toolCall.title}`);
 
-        console.log(`\nOptions:`);
+        logger.debug(`\nOptions:`);
         params.options.forEach((option, index) => {
-            console.log(`   ${index + 1}. ${option.name} (${option.kind})`);
+            logger.debug(`   ${index + 1}. ${option.name} (${option.kind})`);
         });
         // 永远回复allow
         for (const option of params.options) {
             if (option.kind.startsWith("allow_")) {
-                console.log(`   ✅ Auto selected<allow>: ${option.name}`);
+                logger.debug(`   ✅ Auto selected<allow>: ${option.name}`);
                 return {
                     outcome: {
                         outcome: "selected",
@@ -43,7 +45,7 @@ class Client implements acp.Client {
             }
         }
         // 如果没有allow选项，就返回第一个
-        console.log(`   ✅ Auto selected<first>: ${params.options[0].name}`);
+        logger.debug(`   ✅ Auto selected<first>: ${params.options[0].name}`);
         return {
             outcome: {
                 outcome: "selected",
@@ -54,40 +56,40 @@ class Client implements acp.Client {
 
     async sessionUpdate(params: acp.SessionNotification): Promise<void> {
         const update = params.update;
-        console.log(`\n⚡[${update.sessionUpdate}]`);
+        logger.debug(`\n⚡[${update.sessionUpdate}]`);
         switch (update.sessionUpdate) {
             case "agent_message_chunk":
-                console.log(`  🤖[${update.content.type}]`);
+                logger.debug(`  🤖[${update.content.type}]`);
                 if (update.content.type === "text") {
-                    process.stdout.write(update.content.text);
+                    logger.debug(update.content.text);
                     this.messageChunks.push(update.content.text);
                 }
                 break;
             case "tool_call":
-                console.log(`  🔧 ${update.title} (${update.status})`);
+                logger.debug(`  🔧 ${update.title} (${update.status})`);
                 break;
             case "tool_call_update":
-                console.log(
+                logger.debug(
                     `  🔧 Tool call \`${update.toolCallId}\` updated: ${update.status}\n`,
                 );
                 break;
             case "plan":
-                console.log(`  📋\n${update.entries.map(entry => entry.status + " - " + entry.content).join("\n")}`);
+                logger.debug(`  📋\n${update.entries.map(entry => entry.status + " - " + entry.content).join("\n")}`);
                 break;
             case "agent_thought_chunk":
-                console.log(`  💭${update.content.type}`);
+                logger.debug(`  💭${update.content.type}`);
                 if (update.content.type === "text") {
-                    process.stdout.write(update.content.text);
+                    logger.debug(update.content.text);
                 }
                 break;
             case "user_message_chunk":
-                console.log(`  👤[${update.content.type}]`);
+                logger.debug(`  👤[${update.content.type}]`);
                 if (update.content.type === "text") {
-                    process.stdout.write(update.content.text);
+                    logger.debug(update.content.text);
                 }
                 break;
             case "available_commands_update":
-                console.log(JSON.stringify(update.availableCommands, null, 2));
+                logger.debug(JSON.stringify(update.availableCommands, null, 2));
                 break;
             default:
                 break;
@@ -237,7 +239,7 @@ export class AcpManager {
      * Send a prompt and return the agent's full text reply.
      * Includes a timeout guard (default 10 min) to prevent indefinite hangs.
      */
-    public async prompt(sessionId: string, text: string, timeoutMs = 10 * 60 * 1000): Promise<string> {
+    public async prompt(sessionId: string, prompt: acp.ContentBlock[], timeoutMs = 10 * 60 * 1000): Promise<string> {
         if (!this.connection) {
             throw new Error("Connection not initialized. Call connect() first.");
         }
@@ -246,12 +248,7 @@ export class AcpManager {
 
         const promptPromise = this.connection.prompt({
             sessionId: sessionId,
-            prompt: [
-                {
-                    type: "text",
-                    text: text,
-                },
-            ],
+            prompt
         });
 
         // Guard against Agent hanging forever (and chunks piling up).

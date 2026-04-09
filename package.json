@@ -32,7 +32,8 @@
   "scripts": {
     "test": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "start": "pnpm build && cross-env WEIXIN_BOT_CLI_LOG_LEVEL=DEBUG node dist/cli.js start"
   },
   "engines": {
     "node": ">=22"
@@ -47,6 +48,7 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "@vitest/coverage-v8": "^3.1.0",
+    "cross-env": "^10.1.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"
   },

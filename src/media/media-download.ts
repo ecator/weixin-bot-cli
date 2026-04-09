@@ -25,6 +25,15 @@ import { MessageItemType } from "../api/types.js";
 
 const WEIXIN_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
 
+export function guessImageMime(buf: Buffer): string {
+  if (buf.length < 4) return "image/jpeg";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return "image/gif";
+  if (buf.length >= 12 && buf.slice(0, 4).toString("ascii") === "RIFF" && buf.slice(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return "image/jpeg";
+}
+
 /** Persist a buffer via the framework's unified media store. */
 type SaveMediaFn = (
   buffer: Buffer,
@@ -75,7 +84,8 @@ export async function downloadMediaFromItem(
             `${label} image-plain`,
             img.media.full_url,
           );
-      const saved = await saveMedia(buf, undefined, "inbound", WEIXIN_MEDIA_MAX_BYTES);
+      const imageMime = guessImageMime(buf);
+      const saved = await saveMedia(buf, imageMime, "inbound", WEIXIN_MEDIA_MAX_BYTES);
       result.decryptedPicPath = saved.path;
       logger.debug(`${label} image saved: ${saved.path}`);
     } catch (err) {

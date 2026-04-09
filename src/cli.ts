@@ -12,7 +12,7 @@ import {
   listIndexedWeixinAccountIds,
   DEFAULT_BASE_URL,
 } from "./auth/accounts.js";
-import { monitorWeixinProvider } from "./monitor/monitor.js";
+import { extractContentBlocks, monitorWeixinProvider } from "./monitor/monitor.js";
 import { sendMessageWeixin } from "./messaging/send.js";
 import { sendWeixinMediaFile } from "./messaging/send-media.js";
 import { logger } from "./util/logger.js";
@@ -22,6 +22,7 @@ import { AcpManager } from "./acp/client.js";
 import { getConfig, sendTyping } from "./api/api.js";
 import { WeixinConfigManager } from "./api/config-cache.js";
 import type { Logger } from "./util/logger.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 import fs from "fs";
 import path from "path";
@@ -85,11 +86,10 @@ program
           }
           console.log(`\n✅ 登录成功！已保存账号凭证 (Account ID: ${normalizedId})`);
         } catch (err) {
-          logger.error(`保存账号数据失败 accountId=${waitResult.accountId} err=${String(err)}`);
-          console.error(`⚠️ 保存账号数据失败: ${String(err)}`);
+          logger.error(`⚠️ 保存账号数据失败 accountId=${waitResult.accountId} err=${String(err)}`);
         }
       } else {
-        console.error("❌ 登录未成功:", waitResult.message);
+        logger.error(`❌ 登录未成功:${waitResult.message}`);
       }
     } catch (err) {
       console.error("❌ 登录过程中发生错误:", err);
@@ -117,7 +117,6 @@ program
       console.error("❌ 未找到已登录的账号，请先运行 `weixin-bot-cli login`。");
       process.exit(1);
     }
-
     const accountId = ids[0];
     const accountInfo = resolveWeixinAccount(accountId);
 
@@ -135,32 +134,32 @@ program
       acpManager = new AcpManager(acpCmdList[0], acpCmdList.slice(1));
       try {
         const acpIntialResult = await acpManager.connect();
-        console.log(`🔗 ACP初始化结果:`);
-        console.log(JSON.stringify(acpIntialResult, null, 2));
-        console.log(`🤖 现有会话列表:`);
+        logger.debug(`🔗 ACP初始化结果:`);
+        logger.debug(JSON.stringify(acpIntialResult, null, 2));
+        logger.debug(`🤖 现有会话列表:`);
         for (const s of await acpManager.listSessions()) {
-          console.log(`   - ${s}`);
+          logger.debug(`   - ${s}`);
         }
         if (opts.acpSession) {
           acpSessionId = opts.acpSession;
-          console.log(`⏳ 加载会话: ${acpSessionId}`)
+          logger.info(`⏳ 加载会话: ${acpSessionId}`)
           await acpManager.loadSession(acpSessionId!);
-          console.log(`\n💬 复用会话: ${acpSessionId}`);
+          logger.info(`\n💬 复用会话: ${acpSessionId}`);
         } else {
           acpSessionId = await acpManager.createSession();
-          console.log(`\n🆕 创建新会话: ${acpSessionId}`);
+          logger.info(`\n🆕 创建新会话: ${acpSessionId}`);
         }
       } catch (err) {
         console.error("❌ 无法连接到Agent:", err);
         process.exit(1);
       }
     }
-    const aLog: Logger = logger.withAccount(accountId);
-    const configManager = new WeixinConfigManager({ baseUrl: accountInfo.baseUrl, token: accountInfo.token }, (msg) => aLog.debug(msg));
+    const configManager = new WeixinConfigManager({ baseUrl: accountInfo.baseUrl, token: accountInfo.token }, (msg) => logger.debug(msg));
     const onMessage = async (msg: WeixinMessage) => {
       const to = msg.from_user_id ?? "unknown";
       try {
         const userText = extractSummary(msg);
+        const prompt = await extractContentBlocks(msg, accountInfo.cdnBaseUrl);
         let replyText = `已收到：${userText}`;
 
         if (acpManager && acpSessionId) {
@@ -195,17 +194,17 @@ program
 
           try {
             // 转发给Agent获取回复
+            console.debug(prompt);
             const acpTimeoutMs = opts.acpTimeout * 1000;
-            const agentResponse = await acpManager.prompt(acpSessionId, userText, acpTimeoutMs);
+            const agentResponse = await acpManager.prompt(acpSessionId, prompt, acpTimeoutMs);
             if (agentResponse) {
               replyText = agentResponse;
             } else {
               replyText = "Agent没有返回任何文本。";
             }
           } catch (err) {
-            console.error("❌ Agent处理该消息时发生错误:", err);
-            const errStr = err instanceof Error ? err.message : String(err);
-            aLog.error(`onMessage callback error: ${errStr}`);
+            const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
+            logger.error(`onMessage callback error: ${errStr}`);
             replyText = `[Agent Error]\n${errStr}`;
           } finally {
             // Agent响应后，清除重发定时器
@@ -225,8 +224,8 @@ program
         });
         console.log(`\n✅ 消息已成功回复给: ${to}`);
       } catch (err) {
-        console.error("\n❌ 消息回复失败:", err);
-        aLog.error(`onMessage callback error: ${String(err)}`);
+        const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
+        logger.error(`onMessage callback error: ${errStr}`);
       }
     };
 
@@ -239,8 +238,7 @@ program
         onMessage,
       });
     } catch (err) {
-      console.error("❌ 监听发生错误:", err);
-      aLog.error(`monitorWeixinProvider error: ${String(err)}`);
+      logger.error(`monitorWeixinProvider error: ${String(err)}`);
       process.exit(1);
     }
   });

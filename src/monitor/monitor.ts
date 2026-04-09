@@ -7,6 +7,10 @@ import type { Logger } from "../util/logger.js";
 import { redactBody } from "../util/redact.js";
 import { MessageItemType } from "../api/types.js";
 import type { WeixinMessage } from "../api/types.js";
+import { downloadMediaFromItem } from "../media/media-download.js";
+import { getMimeFromFilename } from "../media/mime.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
+
 
 const DEFAULT_LONG_POLL_TIMEOUT_MS = 35_000;
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -50,6 +54,62 @@ export function extractSummary(full: WeixinMessage): string {
 }
 
 /**
+ * Extract content blocks from item_list.
+ * Downloads and decrypts the buffers internally without saving to disk if content is file.
+ */
+export async function extractContentBlocks(
+  full: WeixinMessage,
+  cdnBaseUrl: string,
+): Promise<ContentBlock[]> {
+  const itemList = full.item_list;
+  if (!itemList?.length) return [];
+
+  const results: ContentBlock[] = [];
+
+  for (const item of itemList) {
+    switch (item.type) {
+      case MessageItemType.TEXT:
+        if (item.text_item?.text) {
+          results.push({ type: "text", text: item.text_item.text });
+        }
+        break;
+      case MessageItemType.IMAGE:
+      case MessageItemType.VOICE:
+      case MessageItemType.VIDEO:
+      case MessageItemType.FILE:
+        let contentBuffer: Buffer | null = null;
+        let mimeType: string | undefined;
+        await downloadMediaFromItem(item, {
+          cdnBaseUrl,
+          saveMedia: async (buf, contentType) => {
+            contentBuffer = buf;
+            if (contentType) mimeType = contentType;
+            return { path: "memory" }; // skip persisting to disk
+          },
+          log: (msg) => logger.debug(`extractContentBlocks: ${msg}`),
+          errLog: (msg) => logger.error(`extractContentBlocks error: ${msg}`),
+          label: "extractContentBlocks",
+        });
+        if (contentBuffer && mimeType && (mimeType.startsWith("image/") || mimeType?.startsWith("audio/"))) {
+          results.push({
+            type: item.type === MessageItemType.IMAGE ? "image" : "audio",
+            mimeType: mimeType,
+            data: (contentBuffer as Buffer).toString("base64"),
+          });
+        } else {
+          results.push({ type: "text", text: `[未支持文件类型:${item.type}, mimeType:${mimeType}]` });
+        }
+        break;
+      default:
+        results.push({ type: "text", text: `[未知类型:${item.type}]` });
+        break;
+    }
+  }
+
+  return results;
+}
+
+/**
  * Long-poll loop. Runs until abort.
  */
 export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<void> {
@@ -63,9 +123,8 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
   } = opts;
   const aLog: Logger = logger.withAccount(accountId);
 
-  console.log(`[weixin-bot-cli] 开始监听消息 (baseUrl=${baseUrl}, account=${accountId})`);
   aLog.info(
-    `Monitor started: baseUrl=${baseUrl} timeoutMs=${longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS}`,
+    `Monitor started: baseUrl=${baseUrl} account=${accountId} timeoutMs=${longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS}`,
   );
 
   const syncFilePath = getSyncBufFilePath(accountId);

@@ -79,6 +79,23 @@ function buildLoggerName(accountId?: string): string {
 function writeLog(level: string, message: string, accountId?: string): void {
   const levelId = LEVEL_IDS[level] ?? LEVEL_IDS.INFO;
   if (levelId < minLevelId) return;
+  switch (level) {
+    case "DEBUG":
+      console.debug(message);
+      break;
+    case "INFO":
+      console.info(message);
+      break;
+    case "WARN":
+      console.warn(message);
+      break;
+    case "ERROR":
+      console.error(message);
+      break;
+    default:
+      console.log(message);
+      break;
+  }
 
   const now = new Date();
   const loggerName = buildLoggerName(accountId);
