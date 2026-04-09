@@ -169,7 +169,7 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
         if (isSessionExpired) {
           pauseSession(accountId);
           const pauseMs = getRemainingPauseMs(accountId);
-          console.error(`[Error] 凭证过期 (errcode ${SESSION_EXPIRED_ERRCODE})，暂停轮询 ${Math.ceil(pauseMs / 60_000)} 分钟`);
+          console.error(`\x1b[33m[⚠️ 警告] 凭证过期 (errcode ${SESSION_EXPIRED_ERRCODE})，暂停监听 ${Math.ceil(pauseMs / 60_000)} 分钟。请考虑重新登录。\x1b[0m`);
           aLog.error(
             `getUpdates: session expired (errcode=${resp.errcode} ret=${resp.ret}), pausing all requests for ${Math.ceil(pauseMs / 60_000)} min`,
           );
@@ -205,9 +205,9 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
       for (const full of list) {
         const summary = extractSummary(full);
         const fromUserId = full.from_user_id ?? "unknown";
-        console.log(`\n[收到消息] 来自: ${fromUserId}`);
-        console.log(`> ${summary}`);
-        aLog.info(
+        aLog.debug(`\n[收到消息] 来自: ${fromUserId}`);
+        aLog.debug(`> ${summary}`);
+        aLog.debug(
           `inbound message: from=${fromUserId} types=${full.item_list?.map((i) => i.type).join(",") ?? "none"}`,
         );
 
@@ -220,7 +220,6 @@ export async function monitorWeixinProvider(opts: MonitorWeixinOpts): Promise<vo
             aLog.info(`onMessage callback executed successfully`);
           } catch (cbErr) {
             aLog.error(`onMessage callback error: ${String(cbErr)}`);
-            console.error(`[Error] onMessage 回调执行失败:`, cbErr);
           }
         }
       }

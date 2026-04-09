@@ -79,25 +79,19 @@ function buildLoggerName(accountId?: string): string {
 function writeLog(level: string, message: string, accountId?: string): void {
   const levelId = LEVEL_IDS[level] ?? LEVEL_IDS.INFO;
   if (levelId < minLevelId) return;
-  switch (level) {
-    case "DEBUG":
-      console.debug(message);
-      break;
-    case "INFO":
-      console.info(message);
-      break;
-    case "WARN":
-      console.warn(message);
-      break;
-    case "ERROR":
-      console.error(message);
-      break;
-    default:
-      console.log(message);
-      break;
+  
+  const now = new Date();
+  const dateStr = toLocalISO(now).replace("T", " ").slice(0, 19); // e.g., "2024-04-09 21:56:37"
+  const prefix = accountId ? `[${accountId}]` : `[System]`;
+  const consoleLine = `\x1b[90m[${dateStr}] [${level}] ${prefix} ${message}\x1b[0m`;
+
+  // Write all diagnostic logs exclusively to stderr to isolate them from CLI standard output
+  if (level === "ERROR") {
+    process.stderr.write(`\x1b[31m[${dateStr}] [ERROR] ${prefix} ${message}\x1b[0m\n`);
+  } else {
+    process.stderr.write(`${consoleLine}\n`);
   }
 
-  const now = new Date();
   const loggerName = buildLoggerName(accountId);
   const prefixedMessage = accountId ? `[${accountId}] ${message}` : message;
   const entry = JSON.stringify({

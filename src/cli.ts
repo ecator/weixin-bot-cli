@@ -157,14 +157,22 @@ program
     const configManager = new WeixinConfigManager({ baseUrl: accountInfo.baseUrl, token: accountInfo.token }, (msg) => logger.debug(msg));
     const onMessage = async (msg: WeixinMessage) => {
       const to = msg.from_user_id ?? "unknown";
+      const id = msg.message_id ?? "unknown";
       try {
-        const userText = extractSummary(msg);
+        const userTextSummary = extractSummary(msg);
         const prompt = await extractContentBlocks(msg, accountInfo.cdnBaseUrl);
-        let replyText = `已收到：${userText}`;
+        let replyText = `已收到：${userTextSummary}`;
+        console.log(`\n📨 [收到消息][${id}] 来自: ${to}`);
+        console.log(`> ${userTextSummary}`);
 
         if (acpManager && acpSessionId) {
-          console.log(`\n💬 将消息发送给Agent: ${userText}`);
-          console.log(`⏳ 等待Agent响应...`);
+          console.log(`\n⏳ 将消息[${id}]发送给Agent并等待响应...`);
+          logger.debug(JSON.stringify(prompt.map((block) => {
+            if (block.type === "image" || block.type === "audio") {
+              return { ...block, data: "<chunked>" };
+            }
+            return block;
+          })));
 
           // 获取"正在输入"状态的ticket
           const { typingTicket } = await configManager.getForUser(to, msg.context_token);
@@ -194,13 +202,12 @@ program
 
           try {
             // 转发给Agent获取回复
-            console.debug(prompt);
             const acpTimeoutMs = opts.acpTimeout * 1000;
             const agentResponse = await acpManager.prompt(acpSessionId, prompt, acpTimeoutMs);
             if (agentResponse) {
               replyText = agentResponse;
             } else {
-              replyText = "Agent没有返回任何文本。";
+              replyText = "Agent没有返回任何文本";
             }
           } catch (err) {
             const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
@@ -222,7 +229,8 @@ program
             token: accountInfo.token,
           }
         });
-        console.log(`\n✅ 消息已成功回复给: ${to}`);
+        console.log(`\n✅ 消息[${id}]已成功回复给: ${to}`);
+        console.log(`< ${replyText.slice(0, 100)}${replyText.length > 100 ? "..." : ""}`);
       } catch (err) {
         const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
         logger.error(`onMessage callback error: ${errStr}`);

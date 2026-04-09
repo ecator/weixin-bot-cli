@@ -205,7 +205,7 @@ export class AcpManager {
             } while (nextCursor)
             this.sessions = newSessions;
         } catch (error) {
-            console.error("Failed to list sessions:", error);
+            logger.error(`Failed to list sessions: ${JSON.stringify(error)}`);
         }
         return Array.from(this.sessions);
     }

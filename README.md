@@ -47,10 +47,16 @@ npx @ecat/weixin-bot-cli start
 npx @ecat/weixin-bot-cli start --acp-cmd "gemini --acp" 
 ```
 
-如果需要复用原来的session可以使用--acp-session参数指定session id。
+如果需要复用原来的`session`可以使用`--acp-session`参数指定`session id`,这样就可以继承之前的对话内容了。
 
 ```bash
 npx @ecat/weixin-bot-cli start --acp-cmd "gemini --acp" --acp-session "session-123"
+```
+
+可以通过`--acp-timeout`设置ACP服务端相应超时时间，单位秒，默认10分钟。
+
+```bash
+npx @ecat/weixin-bot-cli start --acp-cmd "gemini --acp" --acp-session "session-123" --acp-timeout 100
 ```
 
 ### 3. 发送消息
