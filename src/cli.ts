@@ -99,7 +99,7 @@ program
 program
   .command("start")
   .description("Start polling for incoming messages, and reply to messages using ACP if --acp-cmd is provided")
-  .option("--acp-cmd <command>", "Command to start the ACP agent (e.g. \"gemini --acp\")")
+  .option("--acp-cmd <command>", "Command to start the ACP server (e.g. \"gemini --acp\")")
   .option("--acp-session <sessionId>", "Reuse an existing ACP session ID")
   .option("--acp-timeout <seconds>", "Timeout in seconds for each ACP prompt", (value) => {
     const n = Number(value);
@@ -129,28 +129,24 @@ program
     let acpSessionId: string | null = null;
 
     if (opts.acpCmd) {
-      console.log(`🚀 正在启动Agent: ${opts.acpCmd}`);
+      console.log(`🚀 正在启动ACP: ${opts.acpCmd}`);
       const acpCmdList = opts.acpCmd.split(" ");
       acpManager = new AcpManager(acpCmdList[0], acpCmdList.slice(1));
       try {
         const acpIntialResult = await acpManager.connect();
-        logger.debug(`🔗 ACP初始化结果:`);
-        logger.debug(JSON.stringify(acpIntialResult, null, 2));
-        logger.debug(`🤖 现有会话列表:`);
-        for (const s of await acpManager.listSessions()) {
-          logger.debug(`   - ${s}`);
-        }
+        logger.debug(`🔗 ACP初始化结果: \n${JSON.stringify(acpIntialResult, null, 2)}`);
+        logger.debug(`🤖 现有会话列表: \n${(await acpManager.listSessions()).join("\n")}`);
         if (opts.acpSession) {
           acpSessionId = opts.acpSession;
           logger.info(`⏳ 加载会话: ${acpSessionId}`)
           await acpManager.loadSession(acpSessionId!);
-          logger.info(`\n💬 复用会话: ${acpSessionId}`);
+          logger.info(`💬 复用会话: ${acpSessionId}`);
         } else {
           acpSessionId = await acpManager.createSession();
-          logger.info(`\n🆕 创建新会话: ${acpSessionId}`);
+          logger.info(`🆕 创建新会话: ${acpSessionId}`);
         }
       } catch (err) {
-        console.error("❌ 无法连接到Agent:", err);
+        console.error("❌ 无法连接到ACP:", err);
         process.exit(1);
       }
     }
@@ -166,10 +162,10 @@ program
         console.log(`> ${userTextSummary}`);
 
         if (acpManager && acpSessionId) {
-          console.log(`\n⏳ 将消息[${id}]发送给Agent并等待响应...`);
+          console.log(`\n⏳ 将消息[${id}]发送给ACP并等待响应...`);
           logger.debug(JSON.stringify(prompt.map((block) => {
             if (block.type === "image" || block.type === "audio") {
-              return { ...block, data: "<chunked>" };
+              return { ...block, data: "...<truncated>" };
             }
             return block;
           })));
@@ -201,20 +197,20 @@ program
           const typingInterval = setInterval(() => { void triggerTyping(1); }, 10_000);
 
           try {
-            // 转发给Agent获取回复
+            // 转发给ACP获取回复
             const acpTimeoutMs = opts.acpTimeout * 1000;
-            const agentResponse = await acpManager.prompt(acpSessionId, prompt, acpTimeoutMs);
-            if (agentResponse) {
-              replyText = agentResponse;
+            const acpResponse = await acpManager.prompt(acpSessionId, prompt, acpTimeoutMs);
+            if (acpResponse) {
+              replyText = acpResponse;
             } else {
-              replyText = "Agent没有返回任何文本";
+              replyText = "ACP没有返回任何文本";
             }
           } catch (err) {
             const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
             logger.error(`onMessage callback error: ${errStr}`);
-            replyText = `[Agent Error]\n${errStr}`;
+            replyText = `[ACP Error]\n${errStr}`;
           } finally {
-            // Agent响应后，清除重发定时器
+            // ACP响应后，清除重发定时器
             clearInterval(typingInterval);
             // 取消"正在输入"状态
             triggerTyping(2);
@@ -230,7 +226,7 @@ program
           }
         });
         console.log(`\n✅ 消息[${id}]已成功回复给: ${to}`);
-        console.log(`< ${replyText.slice(0, 100)}${replyText.length > 100 ? "..." : ""}`);
+        console.log(`< ${replyText.slice(0, 100)}${replyText.length > 100 ? "...<truncated>" : ""}`);
       } catch (err) {
         const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
         logger.error(`onMessage callback error: ${errStr}`);
