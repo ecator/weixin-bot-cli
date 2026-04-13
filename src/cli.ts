@@ -128,28 +128,32 @@ program
     let acpManager: AcpManager | null = null;
     let acpSessionId: string | null = null;
 
-    if (opts.acpCmd) {
-      console.log(`🚀 正在启动ACP: ${opts.acpCmd}`);
-      const acpCmdList = opts.acpCmd.split(" ");
-      acpManager = new AcpManager(acpCmdList[0], acpCmdList.slice(1));
-      try {
-        const acpIntialResult = await acpManager.connect();
-        logger.debug(`🔗 ACP初始化结果: \n${JSON.stringify(acpIntialResult, null, 2)}`);
-        logger.debug(`🤖 现有会话列表: \n${(await acpManager.listSessions()).join("\n")}`);
-        if (opts.acpSession) {
-          acpSessionId = opts.acpSession;
-          logger.info(`⏳ 加载会话: ${acpSessionId}`)
-          await acpManager.loadSession(acpSessionId!);
-          logger.info(`💬 复用会话: ${acpSessionId}`);
-        } else {
-          acpSessionId = await acpManager.createSession();
-          logger.info(`🆕 创建新会话: ${acpSessionId}`);
+    const connectAcp = async () => {
+      if (opts.acpCmd) {
+        console.log(`🚀 正在${acpManager ? "重启" : "启动"}ACP: ${opts.acpCmd}`);
+        const acpCmdList = opts.acpCmd.split(" ");
+        acpManager = new AcpManager(acpCmdList[0], acpCmdList.slice(1));
+        try {
+          const acpIntialResult = await acpManager.connect();
+          logger.debug(`🔗 ACP初始化结果: \n${JSON.stringify(acpIntialResult, null, 2)}`);
+          logger.debug(`🤖 现有会话列表: \n${(await acpManager.listSessions()).join("\n")}`);
+          if (opts.acpSession) {
+            acpSessionId = opts.acpSession;
+            logger.info(`⏳ 加载会话: ${acpSessionId}`)
+            await acpManager.loadSession(acpSessionId!);
+            logger.info(`💬 复用会话: ${acpSessionId}`);
+          } else {
+            acpSessionId = await acpManager.createSession();
+            logger.info(`🆕 创建新会话: ${acpSessionId}`);
+          }
+        } catch (err) {
+          console.error("❌ 无法连接到ACP:", err);
+          process.exit(1);
         }
-      } catch (err) {
-        console.error("❌ 无法连接到ACP:", err);
-        process.exit(1);
       }
-    }
+    };
+    await connectAcp();
+
     const configManager = new WeixinConfigManager({ baseUrl: accountInfo.baseUrl, token: accountInfo.token }, (msg) => logger.debug(msg));
     const onMessage = async (msg: WeixinMessage) => {
       const to = msg.from_user_id ?? "unknown";
@@ -191,30 +195,39 @@ program
               // 静默忽略定时状态重发过程中的偶尔网络波动
             }
           }
+
           // 立即发送第一次"正在输入"状态
           triggerTyping(1);
           // 随后每隔 10 秒刷新一次"正在输入"状态，防止回复时间过长导致"正在输入"状态超时
           const typingInterval = setInterval(() => { void triggerTyping(1); }, 10_000);
-
-          try {
-            // 转发给ACP获取回复
-            const acpTimeoutMs = opts.acpTimeout * 1000;
-            const acpResponse = await acpManager.prompt(acpSessionId, prompt, acpTimeoutMs);
-            if (acpResponse) {
-              replyText = acpResponse;
-            } else {
-              replyText = "ACP没有返回任何文本";
+          // 最多尝试3次数
+          for (let i = 1; i <= 3; i++) {
+            try {
+              // 转发给ACP获取回复
+              const acpTimeoutMs = opts.acpTimeout * 1000;
+              const acpResponse = await acpManager.prompt(acpSessionId, prompt, acpTimeoutMs);
+              if (acpResponse) {
+                replyText = acpResponse;
+              } else {
+                replyText = "ACP没有返回任何文本";
+              }
+              // 成功后立即跳出重试循环
+              break;
+            } catch (err) {
+              const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
+              logger.error(`onMessage callback error(count=${i}): ${errStr}`);
+              if (i < 3) {
+                acpManager?.close();
+                await connectAcp();
+              } else {
+                replyText = `[ACP Error]\n${errStr}`;
+              }
             }
-          } catch (err) {
-            const errStr = typeof err === "object" && err !== null && "message" in err ? err.message : String(err);
-            logger.error(`onMessage callback error: ${errStr}`);
-            replyText = `[ACP Error]\n${errStr}`;
-          } finally {
-            // ACP响应后，清除重发定时器
-            clearInterval(typingInterval);
-            // 取消"正在输入"状态
-            triggerTyping(2);
           }
+          // ACP响应后，清除重发定时器
+          clearInterval(typingInterval);
+          // 取消"正在输入"状态
+          triggerTyping(2);
         }
 
         await sendMessageWeixin({

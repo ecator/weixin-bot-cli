@@ -50,8 +50,6 @@ vi.mock('@agentclientprotocol/sdk', async (importOriginal) => {
 });
 
 describe('AcpManager', () => {
-    let _processPlatform: string;
-
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -116,7 +114,7 @@ describe('AcpManager', () => {
         await manager.listSessions(); // Needs sessions to be non-empty
 
         // This will rely on the listSessions mock adding 'session-123'
-        const result = await manager.prompt('session-123', 'Hello world');
+        const result = await manager.prompt('session-123', [{ type: 'text', text: 'Hello world' }]);
 
         // Since Client side agentMessage is empty when initialized directly, it returns an empty string unless we simulate sessionUpdate
         expect(result).toBe('');
@@ -127,7 +125,7 @@ describe('AcpManager', () => {
         await manager.connect();
         await manager.listSessions();
 
-        await expect(manager.prompt('invalid-session', 'text')).rejects.toThrow('Session ID does not exist');
+        await expect(manager.prompt('invalid-session', [{ type: 'text', text: 'text' }])).rejects.toThrow('Session ID does not exist');
     });
 
     it('should throw an error when connecting twice', async () => {

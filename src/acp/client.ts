@@ -174,6 +174,10 @@ export class AcpManager {
         // Create the client connection
         const stream = acp.ndJsonStream(input, output);
         this.connection = new acp.ClientSideConnection((_agent) => this.client, stream);
+        this.connection.signal.addEventListener("abort", () => {
+            logger.info("Connection aborted");
+            this.close();
+        });
 
         // Initialize the connection
         const initResult = await this.connection.initialize({
@@ -276,9 +280,9 @@ export class AcpManager {
     public close(): void {
         if (this.agentProcess && !this.agentProcess.killed) {
             this.agentProcess.kill();
-            this.agentProcess = null;
-            this.connection = null;
-            this.sessions.clear();
         }
+        this.agentProcess = null;
+        this.connection = null;
+        this.sessions.clear();
     }
 }
