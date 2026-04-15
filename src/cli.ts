@@ -165,6 +165,12 @@ program
         console.log(`\n📨 [收到消息][${id}] 来自: ${to}`);
         console.log(`> ${userTextSummary}`);
 
+        // 插入微信消息元数据，让AI了解消息的上下文
+        prompt.unshift({
+          type: "text",
+          text: `<weixin_message_metadata>\nfrom_user_id: ${to}\nsystem_datetime: ${new Date().toString()}\n</weixin_message_metadata>`,
+        });
+
         if (acpManager && acpSessionId) {
           console.log(`\n⏳ 将消息[${id}]发送给ACP并等待响应...`);
           logger.debug(JSON.stringify(prompt.map((block) => {
